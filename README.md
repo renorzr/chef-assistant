@@ -235,6 +235,15 @@ curl -X POST "http://127.0.0.1:8000/recipes/import/{job_id}/commit"
 
 You can connect OpenClaw to this service using OpenAPI import (best) or manual HTTP actions.
 
+### Skill JSON install (recommended)
+
+Prebuilt skill file is provided: `chef_assistant.skill.json`
+
+1. Start backend: `uvicorn main:app --reload`
+2. In OpenClaw, choose import skill from JSON file
+3. Select `chef_assistant.skill.json`
+4. Run quick checks: `list_recipes`, `generate_menu`, `search_hybrid`
+
 ### Option A (Recommended): OpenAPI import
 
 1. Start backend locally:

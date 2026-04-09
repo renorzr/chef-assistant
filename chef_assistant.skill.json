@@ -1,0 +1,202 @@
+{
+  "skill_id": "chef_assistant",
+  "name": "Chef Assistant",
+  "version": "0.1.0",
+  "description": "Recipe CRUD, menu planning, hybrid semantic search, and Xiachufang import with human-intervention flow.",
+  "base_url": "http://127.0.0.1:8000",
+  "openapi_url": "http://127.0.0.1:8000/openapi.json",
+  "auth": {
+    "type": "none"
+  },
+  "actions": [
+    {
+      "name": "create_recipe",
+      "method": "POST",
+      "path": "/recipes"
+    },
+    {
+      "name": "list_recipes",
+      "method": "GET",
+      "path": "/recipes"
+    },
+    {
+      "name": "get_recipe",
+      "method": "GET",
+      "path": "/recipes/{recipe_id}",
+      "path_params": ["recipe_id"]
+    },
+    {
+      "name": "update_recipe",
+      "method": "PUT",
+      "path": "/recipes/{recipe_id}",
+      "path_params": ["recipe_id"]
+    },
+    {
+      "name": "delete_recipe",
+      "method": "DELETE",
+      "path": "/recipes/{recipe_id}",
+      "path_params": ["recipe_id"]
+    },
+    {
+      "name": "generate_menu",
+      "method": "POST",
+      "path": "/menu/generate"
+    },
+    {
+      "name": "search_vector",
+      "method": "POST",
+      "path": "/recipes/search/vector"
+    },
+    {
+      "name": "search_hybrid",
+      "method": "POST",
+      "path": "/recipes/search/hybrid"
+    },
+    {
+      "name": "import_create_job",
+      "method": "POST",
+      "path": "/recipes/import"
+    },
+    {
+      "name": "import_get_status",
+      "method": "GET",
+      "path": "/recipes/import/{job_id}",
+      "path_params": ["job_id"]
+    },
+    {
+      "name": "import_resume_with_cookies",
+      "method": "POST",
+      "path": "/recipes/import/{job_id}/resume-with-cookies",
+      "path_params": ["job_id"]
+    },
+    {
+      "name": "import_submit_html",
+      "method": "POST",
+      "path": "/recipes/import/{job_id}/submit-html",
+      "path_params": ["job_id"]
+    },
+    {
+      "name": "import_preview",
+      "method": "GET",
+      "path": "/recipes/import/{job_id}/preview",
+      "path_params": ["job_id"]
+    },
+    {
+      "name": "import_commit",
+      "method": "POST",
+      "path": "/recipes/import/{job_id}/commit",
+      "path_params": ["job_id"]
+    },
+    {
+      "name": "embedding_reindex",
+      "method": "POST",
+      "path": "/admin/embeddings/reindex"
+    },
+    {
+      "name": "embedding_audit_status",
+      "method": "GET",
+      "path": "/admin/embeddings/audit"
+    },
+    {
+      "name": "embedding_repair_missing",
+      "method": "POST",
+      "path": "/admin/embeddings/repair-missing"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "xiachufang_import_flow",
+      "description": "Import recipe from Xiachufang with challenge-aware user intervention.",
+      "inputs": ["url"],
+      "steps": [
+        {
+          "id": "create_job",
+          "action": "import_create_job",
+          "input_map": {
+            "url": "{{inputs.url}}"
+          }
+        },
+        {
+          "id": "branch_by_status",
+          "type": "branch",
+          "on": "{{steps.create_job.output.status}}",
+          "cases": {
+            "ready_to_commit": "preview_and_commit",
+            "challenge_required": "ask_user_cookie_or_html",
+            "awaiting_user_input": "ask_user_html"
+          },
+          "default": "poll_status"
+        },
+        {
+          "id": "poll_status",
+          "action": "import_get_status",
+          "input_map": {
+            "job_id": "{{steps.create_job.output.job_id}}"
+          }
+        },
+        {
+          "id": "ask_user_cookie_or_html",
+          "type": "user_interaction",
+          "prompt": "检测到下厨房人机验证。请先在浏览器完成验证，然后提供 Cookie；若仍失败，请粘贴完整页面 HTML。",
+          "expected_fields": ["cookie", "html"]
+        },
+        {
+          "id": "resume_with_cookie_if_present",
+          "type": "conditional_action",
+          "condition": "{{steps.ask_user_cookie_or_html.output.cookie != null}}",
+          "action": "import_resume_with_cookies",
+          "input_map": {
+            "job_id": "{{steps.create_job.output.job_id}}",
+            "cookie": "{{steps.ask_user_cookie_or_html.output.cookie}}"
+          }
+        },
+        {
+          "id": "submit_html_if_present",
+          "type": "conditional_action",
+          "condition": "{{steps.ask_user_cookie_or_html.output.html != null}}",
+          "action": "import_submit_html",
+          "input_map": {
+            "job_id": "{{steps.create_job.output.job_id}}",
+            "html": "{{steps.ask_user_cookie_or_html.output.html}}"
+          }
+        },
+        {
+          "id": "ask_user_html",
+          "type": "user_interaction",
+          "prompt": "请粘贴下厨房菜谱详情页完整 HTML（已完成验证后页面）。",
+          "expected_fields": ["html"]
+        },
+        {
+          "id": "submit_html",
+          "action": "import_submit_html",
+          "input_map": {
+            "job_id": "{{steps.create_job.output.job_id}}",
+            "html": "{{steps.ask_user_html.output.html}}"
+          }
+        },
+        {
+          "id": "preview_and_commit",
+          "action": "import_preview",
+          "input_map": {
+            "job_id": "{{steps.create_job.output.job_id}}"
+          }
+        },
+        {
+          "id": "user_confirm_commit",
+          "type": "user_interaction",
+          "prompt": "已解析菜谱草稿，是否确认入库？",
+          "expected_fields": ["confirm"]
+        },
+        {
+          "id": "commit",
+          "type": "conditional_action",
+          "condition": "{{steps.user_confirm_commit.output.confirm == true}}",
+          "action": "import_commit",
+          "input_map": {
+            "job_id": "{{steps.create_job.output.job_id}}"
+          }
+        }
+      ]
+    }
+  ]
+}
