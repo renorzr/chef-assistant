@@ -187,3 +187,39 @@ class RecipeImportCommitResponse(BaseModel):
     job_id: int
     status: str
     recipe: RecipeRead
+
+
+class EmbeddingReindexRequest(BaseModel):
+    only_missing: bool = False
+
+
+class EmbeddingReindexResponse(BaseModel):
+    total_recipes: int
+    reindexed_count: int
+    skipped_count: int
+    failed_count: int
+    message: str
+
+
+class EmbeddingAuditStatusResponse(BaseModel):
+    enabled: bool
+    interval_seconds: int
+    batch_size: int
+    initial_delay_seconds: int
+    total_recipes: int
+    missing_embeddings: int
+    last_run_at: Optional[str] = None
+    last_repaired_count: int = 0
+    last_failed_count: int = 0
+
+
+class EmbeddingRepairMissingRequest(BaseModel):
+    batch_size: int = Field(default=50, ge=1, le=1000)
+
+
+class EmbeddingRepairMissingResponse(BaseModel):
+    attempted_count: int
+    repaired_count: int
+    failed_count: int
+    remaining_missing: int
+    message: str

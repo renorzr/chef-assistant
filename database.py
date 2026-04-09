@@ -2,6 +2,10 @@ import os
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from config import load_env_file
+
+load_env_file()
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "sqlite:///./chef_assistant.db",

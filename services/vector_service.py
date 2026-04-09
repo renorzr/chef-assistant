@@ -1,40 +1,17 @@
-import hashlib
-import math
-import re
 from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from models import Recipe, RecipeEmbedding
+from services.embedding_provider import get_embedding_provider, EmbeddingProviderError
 
-VECTOR_DIM = 256
-
-
-def _tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
-def _hash_to_index(token: str, dim: int) -> int:
-    digest = hashlib.sha256(token.encode("utf-8")).digest()
-    return int.from_bytes(digest[:8], byteorder="big", signed=False) % dim
-
-
-def embed_text(text: str, dim: int = VECTOR_DIM) -> list[float]:
-    vec = [0.0] * dim
-    tokens = _tokenize(text)
-    if not tokens:
-        return vec
-
-    for token in tokens:
-        idx = _hash_to_index(token, dim)
-        vec[idx] += 1.0
-
-    norm = math.sqrt(sum(v * v for v in vec))
-    if norm == 0:
-        return vec
-
-    return [v / norm for v in vec]
+def embed_text(text: str) -> list[float]:
+    provider = get_embedding_provider()
+    vectors = provider.embed_texts([text])
+    if not vectors:
+        raise EmbeddingProviderError("Embedding provider returned empty vector list.")
+    return vectors[0]
 
 
 def cosine_similarity(v1: Iterable[float], v2: Iterable[float]) -> float:

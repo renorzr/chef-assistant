@@ -16,6 +16,7 @@ from schemas import (
     RecipeImportCommitResponse,
 )
 from services.recipe_service import create_recipe
+from services.recipe_parser_llm import parse_recipe_with_llm, RecipeParserError
 
 
 SUPPORTED_DOMAIN = "xiachufang.com"
@@ -181,7 +182,7 @@ def _detect_challenge(html_text: str) -> bool:
     return any(m in text for m in markers)
 
 
-def _build_recipe_draft_from_html(html_text: str, source_url: str) -> dict[str, Any]:
+def _build_recipe_draft_from_html_fallback(html_text: str, source_url: str) -> dict[str, Any]:
     objs = _extract_json_ld_objects(html_text)
     recipe_obj = _pick_recipe_ld(objs)
 
@@ -285,6 +286,15 @@ def _build_recipe_draft_from_html(html_text: str, source_url: str) -> dict[str, 
     return draft
 
 
+def _build_recipe_draft_from_html(html_text: str, source_url: str) -> tuple[dict[str, Any], str]:
+    try:
+        draft = parse_recipe_with_llm(html_text=html_text, source_url=source_url)
+        return draft, "llm"
+    except RecipeParserError:
+        draft = _build_recipe_draft_from_html_fallback(html_text=html_text, source_url=source_url)
+        return draft, "fallback"
+
+
 def _fetch_url_html(url: str, cookie_header: str | None = None) -> str:
     headers = {
         "User-Agent": (
@@ -345,7 +355,7 @@ def _run_import_attempt(job: RecipeImportJob) -> None:
         return
 
     try:
-        draft = _build_recipe_draft_from_html(html_text, job.source_url)
+        draft, parser_mode = _build_recipe_draft_from_html(html_text, job.source_url)
     except Exception as exc:
         job.status = "awaiting_user_input"
         job.next_action = "submit_html"
@@ -355,7 +365,7 @@ def _run_import_attempt(job: RecipeImportJob) -> None:
     job.parsed_recipe = draft
     job.status = "ready_to_commit"
     job.next_action = "preview_or_commit"
-    job.message = "Recipe parsed successfully. You can preview and commit."
+    job.message = f"Recipe parsed successfully ({parser_mode}). You can preview and commit."
 
 
 def create_import_job(db: Session, source_url: str) -> RecipeImportStatusResponse:
@@ -408,7 +418,7 @@ def submit_import_html(db: Session, job_id: int, html_text: str) -> RecipeImport
     job.message = "Parsing submitted HTML..."
 
     try:
-        draft = _build_recipe_draft_from_html(html_text, job.source_url)
+        draft, parser_mode = _build_recipe_draft_from_html(html_text, job.source_url)
     except Exception as exc:
         job.status = "awaiting_user_input"
         job.next_action = "submit_html"
@@ -420,7 +430,7 @@ def submit_import_html(db: Session, job_id: int, html_text: str) -> RecipeImport
     job.parsed_recipe = draft
     job.status = "ready_to_commit"
     job.next_action = "preview_or_commit"
-    job.message = "Recipe parsed successfully from submitted HTML."
+    job.message = f"Recipe parsed successfully from submitted HTML ({parser_mode})."
     db.commit()
     db.refresh(job)
     return _make_status(job)

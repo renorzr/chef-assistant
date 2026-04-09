@@ -16,8 +16,12 @@ FastAPI + SQLite/PostgreSQL backend for recipe management, menu generation, vect
 - Search
   - Vector search: `POST /recipes/search/vector`
   - Hybrid search (keyword + vector rerank): `POST /recipes/search/hybrid`
+  - Reindex embeddings: `POST /admin/embeddings/reindex`
+  - Audit status: `GET /admin/embeddings/audit`
+  - Repair missing embeddings: `POST /admin/embeddings/repair-missing`
 - Import from link (Xiachufang)
   - Challenge-aware state machine with user intervention (cookies or manual HTML)
+  - LLM-based recipe parsing with fallback parser
 
 ## Tech Stack
 
@@ -56,6 +60,42 @@ uvicorn main:app --reload
 ```bash
 export DATABASE_URL="postgresql+psycopg2://postgres:postgres@localhost:5432/chef_assistant"
 ```
+
+- Embedding provider (`.env` recommended)
+  - This project supports OpenAI-compatible embedding APIs (such as `ofox.ai`).
+  - Create `.env` from `.env.example` and fill values:
+
+```bash
+cp .env.example .env
+```
+
+```env
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_BASE_URL=https://api.ofox.ai/v1
+EMBEDDING_API_KEY=your_ofox_api_key
+EMBEDDING_MODEL=your_embedding_model_name
+EMBEDDING_TIMEOUT_SECONDS=20
+
+EMBEDDING_AUDIT_ENABLED=true
+EMBEDDING_AUDIT_INTERVAL_SECONDS=600
+EMBEDDING_AUDIT_BATCH_SIZE=50
+EMBEDDING_AUDIT_INITIAL_DELAY_SECONDS=10
+
+RECIPE_PARSER_PROVIDER=openai_compatible
+RECIPE_PARSER_BASE_URL=https://api.ofox.ai/v1
+RECIPE_PARSER_API_KEY=your_ofox_api_key
+RECIPE_PARSER_MODEL=your_parser_model_name
+RECIPE_PARSER_TIMEOUT_SECONDS=30
+```
+
+- Strict behavior for vector/hybrid search
+  - If embedding service is unavailable or misconfigured, `POST /recipes/search/vector` and `POST /recipes/search/hybrid` return HTTP `503`.
+  - This is intentional (no silent fallback), so integration issues are visible early.
+
+- Async embedding on recipe creation
+  - `POST /recipes` and `PUT /recipes/{id}` return as soon as recipe data is stored.
+  - Embedding generation runs in a background task.
+  - The periodic audit loop also repairs any missing embeddings.
 
 ## Core API Examples
 
@@ -115,6 +155,34 @@ curl -X POST "http://127.0.0.1:8000/recipes/search/hybrid" \
   }'
 ```
 
+### Reindex embeddings
+
+Use this after changing embedding provider/model, or when importing old data.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/admin/embeddings/reindex" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "only_missing": false
+  }'
+```
+
+### Embedding audit status
+
+```bash
+curl "http://127.0.0.1:8000/admin/embeddings/audit"
+```
+
+### Repair missing embeddings (manual trigger)
+
+```bash
+curl -X POST "http://127.0.0.1:8000/admin/embeddings/repair-missing" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batch_size": 50
+  }'
+```
+
 ## Xiachufang Import Flow (Challenge-Aware)
 
 ### Step 1: Create import job
@@ -146,6 +214,10 @@ curl -X POST "http://127.0.0.1:8000/recipes/import/{job_id}/submit-html" \
   -H "Content-Type: application/json" \
   -d '{"html":"<html>...</html>"}'
 ```
+
+Import parsing behavior:
+- Primary parser: LLM extraction (OpenAI-compatible endpoint)
+- Fallback parser: rule-based extraction if LLM parser fails
 
 ### Step 3: Preview parsed recipe
 

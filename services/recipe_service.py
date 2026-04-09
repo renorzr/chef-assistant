@@ -17,6 +17,7 @@ from schemas import (
     HybridSearchRequest,
     HybridSearchResponse,
     HybridSearchResult,
+    EmbeddingReindexResponse,
 )
 from services.vector_service import (
     embed_text,
@@ -24,6 +25,7 @@ from services.vector_service import (
     upsert_recipe_embedding,
     delete_recipe_embedding,
 )
+from services.embedding_provider import EmbeddingProviderError
 
 
 def _normalize_text(value: str) -> str:
@@ -211,7 +213,6 @@ def create_recipe(db: Session, payload: RecipeCreate) -> RecipeRead:
         )
     ).scalar_one()
 
-    upsert_recipe_embedding(db, recipe)
     db.commit()
 
     return _to_recipe_read(recipe)
@@ -289,7 +290,9 @@ def update_recipe(db: Session, recipe_id: int, payload: RecipeCreate) -> RecipeR
             )
         )
 
-    upsert_recipe_embedding(db, recipe)
+    # Remove stale embedding immediately; async task/audit will rebuild with new content.
+    delete_recipe_embedding(db, recipe_id)
+
     db.commit()
 
     refreshed = _load_recipe_with_relations(db, recipe_id)
@@ -331,6 +334,11 @@ def get_recipe_by_id(db: Session, recipe_id: int) -> RecipeRead | None:
 
 
 def search_recipes_by_vector(db: Session, payload: VectorSearchRequest) -> VectorSearchResponse:
+    try:
+        query_vec = embed_text(payload.query)
+    except EmbeddingProviderError as exc:
+        raise ValueError(f"Vector search unavailable: {exc}") from exc
+
     rows = db.execute(
         select(Recipe)
         .options(
@@ -342,7 +350,6 @@ def search_recipes_by_vector(db: Session, payload: VectorSearchRequest) -> Vecto
         .order_by(Recipe.id.asc())
     ).scalars().all()
 
-    query_vec = embed_text(payload.query)
     requested_tags = {t.strip().lower() for t in payload.tags if t and t.strip()}
     requested_difficulty = payload.difficulty.strip().lower() if payload.difficulty else None
 
@@ -359,7 +366,10 @@ def search_recipes_by_vector(db: Session, payload: VectorSearchRequest) -> Vecto
 
         embedding_vector = recipe.embedding.vector if recipe.embedding else None
         if embedding_vector is None:
-            upsert_recipe_embedding(db, recipe)
+            try:
+                upsert_recipe_embedding(db, recipe)
+            except EmbeddingProviderError as exc:
+                raise ValueError(f"Vector search unavailable: {exc}") from exc
             db.flush()
             embedding_row = db.execute(
                 select(RecipeEmbedding).where(RecipeEmbedding.recipe_id == recipe.id)
@@ -385,6 +395,11 @@ def search_recipes_by_vector(db: Session, payload: VectorSearchRequest) -> Vecto
 
 
 def search_recipes_hybrid(db: Session, payload: HybridSearchRequest) -> HybridSearchResponse:
+    try:
+        query_vec = embed_text(payload.query)
+    except EmbeddingProviderError as exc:
+        raise ValueError(f"Hybrid search unavailable: {exc}") from exc
+
     rows = db.execute(
         select(Recipe)
         .options(
@@ -396,7 +411,6 @@ def search_recipes_hybrid(db: Session, payload: HybridSearchRequest) -> HybridSe
         .order_by(Recipe.id.asc())
     ).scalars().all()
 
-    query_vec = embed_text(payload.query)
     requested_tags = {t.strip().lower() for t in payload.tags if t and t.strip()}
     requested_difficulty = payload.difficulty.strip().lower() if payload.difficulty else None
 
@@ -413,7 +427,10 @@ def search_recipes_hybrid(db: Session, payload: HybridSearchRequest) -> HybridSe
 
         embedding_vector = recipe.embedding.vector if recipe.embedding else None
         if embedding_vector is None:
-            upsert_recipe_embedding(db, recipe)
+            try:
+                upsert_recipe_embedding(db, recipe)
+            except EmbeddingProviderError as exc:
+                raise ValueError(f"Hybrid search unavailable: {exc}") from exc
             db.flush()
             embedding_row = db.execute(
                 select(RecipeEmbedding).where(RecipeEmbedding.recipe_id == recipe.id)
@@ -441,4 +458,47 @@ def search_recipes_hybrid(db: Session, payload: HybridSearchRequest) -> HybridSe
             )
             for score, semantic_score, keyword_score, recipe in top
         ],
+    )
+
+
+def reindex_recipe_embeddings(db: Session, only_missing: bool = False) -> EmbeddingReindexResponse:
+    rows = db.execute(
+        select(Recipe)
+        .options(
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.embedding),
+        )
+        .order_by(Recipe.id.asc())
+    ).scalars().all()
+
+    total = len(rows)
+    reindexed = 0
+    skipped = 0
+    failed = 0
+
+    for recipe in rows:
+        if only_missing and recipe.embedding is not None:
+            skipped += 1
+            continue
+
+        try:
+            upsert_recipe_embedding(db, recipe)
+            reindexed += 1
+        except EmbeddingProviderError:
+            failed += 1
+
+    db.commit()
+
+    if failed > 0:
+        message = "Reindex completed with failures. Check embedding provider configuration and availability."
+    else:
+        message = "Reindex completed successfully."
+
+    return EmbeddingReindexResponse(
+        total_recipes=total,
+        reindexed_count=reindexed,
+        skipped_count=skipped,
+        failed_count=failed,
+        message=message,
     )

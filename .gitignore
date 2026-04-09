@@ -8,3 +8,4 @@ chef_assistant.db
 .DS_Store
 *.sqlite3
 *.db
+.env
