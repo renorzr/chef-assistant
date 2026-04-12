@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config import load_env_file
@@ -10,6 +10,11 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "sqlite:///./chef_assistant.db",
 )
+
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
+    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
@@ -62,6 +67,41 @@ def run_sqlite_migrations() -> None:
                 conn.exec_driver_sql(
                     "ALTER TABLE recipe_steps ADD COLUMN image_url VARCHAR(1000)"
                 )
+
+        if "xiachufang_recommended_runs" in tables:
+            run_cols = {
+                row[1]
+                for row in conn.exec_driver_sql("PRAGMA table_info('xiachufang_recommended_runs')")
+            }
+            if "max_links" not in run_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE xiachufang_recommended_runs ADD COLUMN max_links INTEGER NOT NULL DEFAULT 30"
+                )
+            if "auto_commit" not in run_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE xiachufang_recommended_runs ADD COLUMN auto_commit INTEGER NOT NULL DEFAULT 1"
+                )
+
+
+def cleanup_placeholder_media() -> None:
+    with engine.begin() as conn:
+        pattern = "https://example.com/%"
+        conn.execute(
+            text("UPDATE recipes SET cover_image_url = NULL WHERE cover_image_url LIKE :pattern"),
+            {"pattern": pattern},
+        )
+        conn.execute(
+            text("UPDATE recipes SET source_url = NULL WHERE source_url LIKE :pattern"),
+            {"pattern": pattern},
+        )
+        conn.execute(
+            text("UPDATE recipe_steps SET image_url = NULL WHERE image_url LIKE :pattern"),
+            {"pattern": pattern},
+        )
+        conn.execute(
+            text("DELETE FROM recipe_media WHERE url LIKE :pattern"),
+            {"pattern": pattern},
+        )
 
 
 def get_db():

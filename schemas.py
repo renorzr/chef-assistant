@@ -116,6 +116,166 @@ class MenuGenerateResponse(BaseModel):
     notes: List[str]
 
 
+class MenuCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    preference_text: Optional[str] = None
+
+
+class MenuUpdateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    preference_text: Optional[str] = None
+
+
+class MenuSummaryRead(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    preference_text: Optional[str] = None
+    item_count: int = 0
+
+
+class MenuCategoryCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    sort_order: int = 0
+
+
+class MenuCategoryUpdateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    sort_order: int = 0
+
+
+class MenuCategoryRead(BaseModel):
+    id: int
+    menu_id: int
+    name: str
+    sort_order: int
+
+
+class MenuItemCreateRequest(BaseModel):
+    recipe_id: int = Field(..., ge=1)
+    category_id: Optional[int] = None
+    item_name_override: Optional[str] = None
+    notes: Optional[str] = None
+    sort_order: int = 0
+
+
+class MenuItemUpdateRequest(BaseModel):
+    recipe_id: int = Field(..., ge=1)
+    category_id: Optional[int] = None
+    item_name_override: Optional[str] = None
+    notes: Optional[str] = None
+    sort_order: int = 0
+
+
+class MenuItemRead(BaseModel):
+    id: int
+    menu_id: int
+    recipe_id: int
+    recipe_name: str
+    recipe_cover_image_url: Optional[str] = None
+    recipe_cook_time_minutes: Optional[int] = None
+    recipe_difficulty: Optional[str] = None
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    item_name_override: Optional[str] = None
+    notes: Optional[str] = None
+    sort_order: int
+
+
+class MenuRead(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    preference_text: Optional[str] = None
+    categories: List[MenuCategoryRead]
+    items: List[MenuItemRead]
+
+
+class MenuGenerateFromTextRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+    preference_text: str = Field(..., min_length=1)
+    dish_count: Optional[int] = Field(default=None, ge=1, le=20)
+
+
+class MenuGenerateFromTextResponse(BaseModel):
+    menu: MenuRead
+    generation_notes: List[str]
+    score_breakdown: Dict[str, float]
+
+
+class MealPlanItemRead(BaseModel):
+    id: int
+    meal_plan_id: int
+    recipe_id: int
+    recipe_name: str
+    recipe_cover_image_url: Optional[str] = None
+    recipe_cook_time_minutes: Optional[int] = None
+    recipe_difficulty: Optional[str] = None
+    sort_order: int
+    notes: Optional[str] = None
+
+
+class MealPlanRead(BaseModel):
+    id: int
+    name: str
+    status: str
+    completed_at: Optional[str] = None
+    items: List[MealPlanItemRead]
+
+
+class MealPlanSummaryRead(BaseModel):
+    id: int
+    name: str
+    status: str
+    item_count: int = 0
+    completed_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class MealPlanItemCreateRequest(BaseModel):
+    recipe_id: int = Field(..., ge=1)
+
+
+class MealPlanUpdateRequest(BaseModel):
+    name: str = Field(..., min_length=1)
+
+
+
+class ChatMessageRequest(BaseModel):
+    session_id: Optional[str] = None
+    message: str = Field(..., min_length=1)
+    context: Dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class ChatCard(BaseModel):
+    type: str
+    id: str
+    title: str
+    subtitle: Optional[str] = None
+    image_url: Optional[str] = None
+
+
+class ChatMessageResponse(BaseModel):
+    session_id: str
+    reply_text: str
+    cards: List[ChatCard]
+
+
+class ChatHistoryMessage(BaseModel):
+    id: int
+    role: str
+    content: str
+    cards: List[ChatCard] = Field(default_factory=list)
+    created_at: Optional[str] = None
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: List[ChatHistoryMessage]
+
+
 class VectorSearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=50)
@@ -187,6 +347,44 @@ class RecipeImportCommitResponse(BaseModel):
     job_id: int
     status: str
     recipe: RecipeRead
+
+
+class XiachufangRecommendedImportCreateRequest(BaseModel):
+    homepage_url: str = Field(default="https://www.xiachufang.com/")
+    max_links: int = Field(default=30, ge=1, le=200)
+    auto_commit: bool = True
+
+
+class XiachufangRecommendedRunItemRead(BaseModel):
+    id: int
+    recipe_url: str
+    status: str
+    message: Optional[str] = None
+    import_job_id: Optional[int] = None
+    recipe_id: Optional[int] = None
+
+
+class XiachufangRecommendedRunResponse(BaseModel):
+    run_id: int
+    homepage_url: str
+    max_links: int
+    auto_commit: bool
+    status: str
+    message: Optional[str] = None
+    next_action: Optional[str] = None
+    requires_user_intervention: bool
+    discovered_count: int
+    queued_count: int
+    imported_count: int
+    failed_count: int
+    skipped_count: int
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class XiachufangRecommendedRunItemsResponse(BaseModel):
+    run_id: int
+    items: List[XiachufangRecommendedRunItemRead]
 
 
 class EmbeddingReindexRequest(BaseModel):

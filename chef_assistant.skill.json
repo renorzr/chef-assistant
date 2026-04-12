@@ -88,6 +88,35 @@
       "path_params": ["job_id"]
     },
     {
+      "name": "import_recommended_create_run",
+      "method": "POST",
+      "path": "/recipes/import/xiachufang/recommended"
+    },
+    {
+      "name": "import_recommended_get_run",
+      "method": "GET",
+      "path": "/recipes/import/xiachufang/recommended/{run_id}",
+      "path_params": ["run_id"]
+    },
+    {
+      "name": "import_recommended_list_items",
+      "method": "GET",
+      "path": "/recipes/import/xiachufang/recommended/{run_id}/items",
+      "path_params": ["run_id"]
+    },
+    {
+      "name": "import_recommended_resume_with_cookies",
+      "method": "POST",
+      "path": "/recipes/import/xiachufang/recommended/{run_id}/resume-with-cookies",
+      "path_params": ["run_id"]
+    },
+    {
+      "name": "import_recommended_submit_html",
+      "method": "POST",
+      "path": "/recipes/import/xiachufang/recommended/{run_id}/submit-html",
+      "path_params": ["run_id"]
+    },
+    {
       "name": "embedding_reindex",
       "method": "POST",
       "path": "/admin/embeddings/reindex"

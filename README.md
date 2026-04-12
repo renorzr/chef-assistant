@@ -13,6 +13,8 @@ FastAPI + SQLite/PostgreSQL backend for recipe management, menu generation, vect
 - Menu planning
   - Generate menu: `POST /menu/generate`
   - Rules included: main ingredient diversity, meat+vegetable balance, cooking method diversity, available ingredient preference, simple/short-time preference
+  - Reusable menu CRUD: `/menus/*`
+  - Generate reusable menu from natural language: `POST /menus/generate-from-text`
 - Search
   - Vector search: `POST /recipes/search/vector`
   - Hybrid search (keyword + vector rerank): `POST /recipes/search/hybrid`
@@ -22,6 +24,8 @@ FastAPI + SQLite/PostgreSQL backend for recipe management, menu generation, vect
 - Import from link (Xiachufang)
   - Challenge-aware state machine with user intervention (cookies or manual HTML)
   - LLM-based recipe parsing with fallback parser
+  - Import all homepage recommended recipes
+  - Daily scheduled recommended import
 
 ## Tech Stack
 
@@ -45,6 +49,20 @@ pip install -r requirements.txt
 ```bash
 uvicorn main:app --reload
 ```
+
+### 2.1) Run frontend (optional)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend URL: `http://127.0.0.1:5173`
+
+Notes:
+- Frontend chat page calls a mocked `POST /chat/messages` flow for now.
+- Frontend API calls use `/api/*` and are proxied by Vite to backend `http://127.0.0.1:8000`.
 
 ### 3) Open API docs
 
@@ -86,6 +104,19 @@ RECIPE_PARSER_BASE_URL=https://api.ofox.ai/v1
 RECIPE_PARSER_API_KEY=your_ofox_api_key
 RECIPE_PARSER_MODEL=your_parser_model_name
 RECIPE_PARSER_TIMEOUT_SECONDS=30
+
+CHAT_LLM_BASE_URL=https://api.ofox.ai/v1
+CHAT_LLM_API_KEY=your_ofox_api_key
+CHAT_LLM_MODEL=your_chat_model_name
+CHAT_LLM_TIMEOUT_SECONDS=30
+
+XCF_RECOMMENDED_DAILY_ENABLED=true
+XCF_RECOMMENDED_DAILY_TIME=06:00
+XCF_RECOMMENDED_DAILY_TZ=Asia/Shanghai
+XCF_RECOMMENDED_MAX_LINKS=30
+XCF_RECOMMENDED_AUTO_COMMIT=true
+XCF_RECOMMENDED_HOMEPAGE_URL=https://www.xiachufang.com/
+XCF_RECOMMENDED_COOKIE=
 ```
 
 - Strict behavior for vector/hybrid search
@@ -142,6 +173,34 @@ curl -X POST "http://127.0.0.1:8000/menu/generate" \
     "constraints": ["simple"]
   }'
 ```
+
+### Create reusable menu from natural language
+
+```bash
+curl -X POST "http://127.0.0.1:8000/menus/generate-from-text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "工作日晚餐菜单",
+    "preference_text": "想要清淡一点，最好有一道汤，做法简单，4道菜",
+    "dish_count": 4
+  }'
+```
+
+### Menu template CRUD
+
+- `POST /menus`
+- `GET /menus`
+- `GET /menus/{menu_id}`
+- `PUT /menus/{menu_id}`
+- `DELETE /menus/{menu_id}`
+- `POST /menus/{menu_id}/categories`
+- `GET /menus/{menu_id}/categories`
+- `PUT /menus/{menu_id}/categories/{category_id}`
+- `DELETE /menus/{menu_id}/categories/{category_id}`
+- `POST /menus/{menu_id}/items`
+- `GET /menus/{menu_id}/items`
+- `PUT /menus/{menu_id}/items/{item_id}`
+- `DELETE /menus/{menu_id}/items/{item_id}`
 
 ### Hybrid search
 
@@ -229,6 +288,48 @@ curl "http://127.0.0.1:8000/recipes/import/{job_id}/preview"
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/recipes/import/{job_id}/commit"
+```
+
+## Xiachufang Homepage Recommended Import
+
+### Trigger a batch import
+
+```bash
+curl -X POST "http://127.0.0.1:8000/recipes/import/xiachufang/recommended" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "homepage_url": "https://www.xiachufang.com/",
+    "max_links": 30,
+    "auto_commit": true
+  }'
+```
+
+### Check run status
+
+```bash
+curl "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}"
+```
+
+### List run items
+
+```bash
+curl "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}/items"
+```
+
+### Resume run with cookies (when challenge_required)
+
+```bash
+curl -X POST "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}/resume-with-cookies" \
+  -H "Content-Type: application/json" \
+  -d '{"cookie":"your_xiachufang_cookie_header"}'
+```
+
+### Submit homepage HTML manually (fallback)
+
+```bash
+curl -X POST "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}/submit-html" \
+  -H "Content-Type: application/json" \
+  -d '{"html":"<html>...</html>"}'
 ```
 
 ## OpenClaw Integration Guide

@@ -14,6 +14,65 @@ class RecipeParserError(Exception):
     pass
 
 
+def _normalize_recipe_name(name: str) -> str:
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return "Imported Recipe"
+
+    # Drop trailing parenthetical flavor text while keeping the main dish name.
+    cleaned = re.sub(r"\s*[（(][^）)]{1,30}[）)]\s*$", "", cleaned).strip()
+    return cleaned or "Imported Recipe"
+
+
+def _extract_json_ld_blocks(html_text: str) -> list[str]:
+    blocks = re.findall(
+        r"<script[^>]*type=['\"]application/ld\+json['\"][^>]*>(.*?)</script>",
+        html_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return [b.strip() for b in blocks if b and b.strip()]
+
+
+def _extract_candidate_image_urls(html_text: str, max_count: int = 80) -> list[str]:
+    img_tags = re.findall(r"<img[^>]+>", html_text, flags=re.IGNORECASE)
+    rows: list[tuple[int, str]] = []
+
+    for tag in img_tags:
+        m = re.search(
+            r"(?:data-original|data-src|src)=[\"'](https?://[^\"']+)[\"']",
+            tag,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            continue
+        url = m.group(1).strip()
+        lower = (tag + " " + url).lower()
+
+        if any(k in lower for k in ["icon", "logo", "sprite", "qrcode", "avatar", "ie-story"]):
+            continue
+
+        score = 0
+        if any(k in lower for k in ["step", "zuofa", "method", "process", "步骤"]):
+            score += 3
+        if any(k in lower for k in ["avatar", "logo", "icon", "qrcode", "ads", "banner"]):
+            score -= 5
+
+        rows.append((score, url))
+
+    rows.sort(key=lambda x: x[0], reverse=True)
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for _, url in rows:
+        if url in seen:
+            continue
+        seen.add(url)
+        dedup.append(url)
+        if len(dedup) >= max_count:
+            break
+
+    return dedup
+
+
 def _compact_text_from_html(html_text: str) -> str:
     text = re.sub(r"<script[^>]*>.*?</script>", " ", html_text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
@@ -23,7 +82,7 @@ def _compact_text_from_html(html_text: str) -> str:
 
 
 def _normalize_draft(draft: dict[str, Any], source_url: str) -> dict[str, Any]:
-    name = str(draft.get("name") or "Imported Recipe").strip()
+    name = _normalize_recipe_name(str(draft.get("name") or "Imported Recipe"))
     description = draft.get("description")
     cook_time_minutes = int(draft.get("cook_time_minutes") or 30)
     cook_time_minutes = max(1, cook_time_minutes)
@@ -65,6 +124,22 @@ def _normalize_draft(draft: dict[str, Any], source_url: str) -> dict[str, Any]:
 
     steps_raw = draft.get("steps") or []
     steps: list[dict[str, Any]] = []
+
+    def _normalize_img(value: Any) -> str | None:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        if isinstance(value, dict):
+            u = value.get("url")
+            if isinstance(u, str) and u.strip():
+                return u.strip()
+        if isinstance(value, list):
+            for item in value:
+                normalized = _normalize_img(item)
+                if normalized:
+                    return normalized
+        return None
+
     for idx, row in enumerate(steps_raw, start=1):
         if not isinstance(row, dict):
             continue
@@ -78,7 +153,7 @@ def _normalize_draft(draft: dict[str, Any], source_url: str) -> dict[str, Any]:
             {
                 "step_order": order,
                 "instruction": instruction,
-                "image_url": row.get("image_url"),
+                "image_url": _normalize_img(row.get("image_url")),
             }
         )
 
@@ -142,9 +217,12 @@ def parse_recipe_with_llm(html_text: str, source_url: str) -> dict[str, Any]:
         )
 
     compact_text = _compact_text_from_html(html_text)
+    html_snippet = html_text[:30000]
+    json_ld_blocks = _extract_json_ld_blocks(html_text)
+    image_candidates = _extract_candidate_image_urls(html_text)
 
     schema_hint = {
-        "name": "string",
+        "name": "string (concise canonical dish name only, not a marketing title or full sentence)",
         "description": "string|null",
         "cook_time_minutes": "integer",
         "difficulty": "easy|medium|hard",
@@ -165,6 +243,12 @@ def parse_recipe_with_llm(html_text: str, source_url: str) -> dict[str, Any]:
         "Return strictly valid JSON only, with keys matching this schema: "
         f"{json.dumps(schema_hint, ensure_ascii=False)}. "
         "If values are unknown, use null or reasonable defaults. "
+        "The `name` field must be the concise canonical dish name only. "
+        "Do not copy long marketing titles, full sentences, or promotional wording into `name`. "
+        "Examples: `巨鲜美的冬瓜丸子汤` -> `冬瓜丸子汤`; "
+        "`下饭菜鱼香茄子的经典做法` -> `鱼香茄子`; "
+        "`一根大葱，2块钱豆腐，3分钟做一道葱烧豆腐...` -> `葱烧豆腐`. "
+        "When available, include per-step image URLs in steps[].image_url. "
         "Do not include markdown fences or extra text."
     )
 
@@ -177,6 +261,12 @@ def parse_recipe_with_llm(html_text: str, source_url: str) -> dict[str, Any]:
                 "role": "user",
                 "content": (
                     f"Source URL: {source_url}\n"
+                    "Page HTML snippet:\n"
+                    f"{html_snippet}\n\n"
+                    "JSON-LD blocks extracted from page:\n"
+                    f"{json.dumps(json_ld_blocks[:5], ensure_ascii=False)}\n\n"
+                    "Candidate image URLs (likely includes step images):\n"
+                    f"{json.dumps(image_candidates[:40], ensure_ascii=False)}\n\n"
                     "Page text (cleaned from html):\n"
                     f"{compact_text}"
                 ),

@@ -114,6 +114,122 @@ class RecipeEmbedding(Base):
     recipe = relationship("Recipe", back_populates="embedding")
 
 
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(255), nullable=False, unique=True, index=True)
+    title = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_ref_id = Column(Integer, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    cards_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    session = relationship("ChatSession", back_populates="messages")
+
+
+class Menu(Base):
+    __tablename__ = "menus"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    preference_text = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    categories = relationship("MenuCategory", back_populates="menu", cascade="all, delete-orphan")
+    items = relationship("MenuItem", back_populates="menu", cascade="all, delete-orphan")
+
+
+class MenuCategory(Base):
+    __tablename__ = "menu_categories"
+    __table_args__ = (
+        UniqueConstraint("menu_id", "name", name="uq_menu_category_name"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_id = Column(Integer, ForeignKey("menus.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    menu = relationship("Menu", back_populates="categories")
+    items = relationship("MenuItem", back_populates="category")
+
+
+class MenuItem(Base):
+    __tablename__ = "menu_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_id = Column(Integer, ForeignKey("menus.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="RESTRICT"), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("menu_categories.id", ondelete="SET NULL"), nullable=True)
+
+    item_name_override = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    menu = relationship("Menu", back_populates="items")
+    category = relationship("MenuCategory", back_populates="items")
+    recipe = relationship("Recipe")
+
+
+class MealPlan(Base):
+    __tablename__ = "meal_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="editing", index=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    items = relationship("MealPlanItem", back_populates="meal_plan", cascade="all, delete-orphan")
+
+
+class MealPlanItem(Base):
+    __tablename__ = "meal_plan_items"
+    __table_args__ = (
+        UniqueConstraint("meal_plan_id", "recipe_id", name="uq_meal_plan_recipe"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    meal_plan_id = Column(Integer, ForeignKey("meal_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="RESTRICT"), nullable=False, index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    notes = Column(Text, nullable=True)
+
+    meal_plan = relationship("MealPlan", back_populates="items")
+    recipe = relationship("Recipe")
+
+
 class RecipeImportJob(Base):
     __tablename__ = "recipe_import_jobs"
 
@@ -135,3 +251,68 @@ class RecipeImportJob(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class XiachufangRecommendedRun(Base):
+    __tablename__ = "xiachufang_recommended_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    homepage_url = Column(String(1000), nullable=False, default="https://www.xiachufang.com/")
+    max_links = Column(Integer, nullable=False, default=30)
+    auto_commit = Column(Integer, nullable=False, default=1)
+    status = Column(String(50), nullable=False, default="pending")
+    message = Column(Text, nullable=True)
+    next_action = Column(String(100), nullable=True)
+
+    cookie_header = Column(Text, nullable=True)
+    homepage_html = Column(Text, nullable=True)
+
+    discovered_count = Column(Integer, nullable=False, default=0)
+    queued_count = Column(Integer, nullable=False, default=0)
+    imported_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    skipped_count = Column(Integer, nullable=False, default=0)
+
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    items = relationship(
+        "XiachufangRecommendedRunItem",
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class XiachufangRecommendedRunItem(Base):
+    __tablename__ = "xiachufang_recommended_run_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(
+        Integer,
+        ForeignKey("xiachufang_recommended_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    recipe_url = Column(String(1000), nullable=False)
+    status = Column(String(50), nullable=False, default="pending")
+    message = Column(Text, nullable=True)
+
+    import_job_id = Column(Integer, ForeignKey("recipe_import_jobs.id", ondelete="SET NULL"), nullable=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    run = relationship("XiachufangRecommendedRun", back_populates="items")

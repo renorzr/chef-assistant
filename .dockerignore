@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+node_modules
+frontend/node_modules
+frontend/dist
+chef_assistant.db
+dist
+*.log

@@ -9,6 +9,9 @@ from schemas import (
     RecipeImportSubmitHtmlRequest,
     RecipeImportPreviewResponse,
     RecipeImportCommitResponse,
+    XiachufangRecommendedImportCreateRequest,
+    XiachufangRecommendedRunResponse,
+    XiachufangRecommendedRunItemsResponse,
 )
 from services.import_service import (
     create_import_job,
@@ -17,6 +20,11 @@ from services.import_service import (
     submit_import_html,
     get_import_preview,
     commit_import_job,
+    create_recommended_import_run,
+    get_recommended_import_run_status,
+    list_recommended_import_run_items,
+    resume_recommended_import_with_cookies,
+    submit_recommended_homepage_html,
 )
 
 router = APIRouter()
@@ -74,5 +82,77 @@ def get_import_preview_endpoint(job_id: int, db: Session = Depends(get_db)):
 def commit_import_job_endpoint(job_id: int, db: Session = Depends(get_db)):
     try:
         return commit_import_job(db, job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/recipes/import/xiachufang/recommended",
+    response_model=XiachufangRecommendedRunResponse,
+    status_code=201,
+)
+def create_recommended_import_run_endpoint(
+    payload: XiachufangRecommendedImportCreateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return create_recommended_import_run(
+            db=db,
+            homepage_url=payload.homepage_url,
+            max_links=payload.max_links,
+            auto_commit=payload.auto_commit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get(
+    "/recipes/import/xiachufang/recommended/{run_id}",
+    response_model=XiachufangRecommendedRunResponse,
+)
+def get_recommended_import_run_status_endpoint(run_id: int, db: Session = Depends(get_db)):
+    try:
+        return get_recommended_import_run_status(db, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/recipes/import/xiachufang/recommended/{run_id}/items",
+    response_model=XiachufangRecommendedRunItemsResponse,
+)
+def list_recommended_import_run_items_endpoint(run_id: int, db: Session = Depends(get_db)):
+    try:
+        return list_recommended_import_run_items(db, run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/recipes/import/xiachufang/recommended/{run_id}/resume-with-cookies",
+    response_model=XiachufangRecommendedRunResponse,
+)
+def resume_recommended_import_with_cookies_endpoint(
+    run_id: int,
+    payload: RecipeImportResumeCookiesRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return resume_recommended_import_with_cookies(db, run_id, payload.cookie)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post(
+    "/recipes/import/xiachufang/recommended/{run_id}/submit-html",
+    response_model=XiachufangRecommendedRunResponse,
+)
+def submit_recommended_homepage_html_endpoint(
+    run_id: int,
+    payload: RecipeImportSubmitHtmlRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return submit_recommended_homepage_html(db, run_id, payload.html)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
