@@ -9,3 +9,5 @@ chef_assistant.db
 *.sqlite3
 *.db
 .env
+frontend/node_modules/
+frontend/dist/
