@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getChatMessages, sendChatMessage } from "./api/chat";
 import { addMenuItem, createMenuCategory, createMenuFromText, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "./api/menus";
-import { addMealPlanItem, completeMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
+import { addMealPlanItem, cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
 import { getRecipe, listRecipes, searchRecipes, updateRecipe } from "./api/recipes";
 
 function isUsableImage(url) {
@@ -272,6 +272,25 @@ function RecipeActionSheet({ open, title = "操作", options, onClose }) {
   );
 }
 
+function ExpiredMealPlanSheet({ open, onClose, onContinue, onComplete, onCancelPlan, loadingAction }) {
+  return (
+    <BottomSheet open={open} title="当前餐单已过期" onClose={onClose}>
+      <div className="space-y-2 pb-2">
+        <div className="mb-2 text-sm text-gray-500">这个编辑中的餐单已经超过预计完成时间，请选择如何处理。</div>
+        <button onClick={onContinue} disabled={!!loadingAction} className="w-full rounded-2xl bg-gray-50 p-3 text-left disabled:opacity-40">
+          {loadingAction === "continue" ? "处理中" : "继续使用这个餐单"}
+        </button>
+        <button onClick={onComplete} disabled={!!loadingAction} className="w-full rounded-2xl bg-gray-50 p-3 text-left disabled:opacity-40">
+          {loadingAction === "complete" ? "处理中" : "完成这个餐单"}
+        </button>
+        <button onClick={onCancelPlan} disabled={!!loadingAction} className="w-full rounded-2xl bg-red-50 p-3 text-left text-red-600 disabled:opacity-40">
+          {loadingAction === "cancel" ? "处理中" : "取消这个餐单"}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
 function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -287,6 +306,8 @@ function Home() {
   const [savingMenuId, setSavingMenuId] = useState(null);
   const [mealPlanSaving, setMealPlanSaving] = useState(false);
   const [addedMealPlanId, setAddedMealPlanId] = useState(null);
+  const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
+  const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
   const navigate = useNavigate();
   const bottomRef = useRef(null);
 
@@ -390,12 +411,30 @@ function Home() {
     if (!actionRecipe || mealPlanSaving) return;
     setMealPlanSaving(true);
     try {
-      await addMealPlanItem(Number(actionRecipe.id));
+      const result = await addMealPlanItem(Number(actionRecipe.id), "ask");
+      if (result.status === "expired_confirmation_required") {
+        setSheetOpen(false);
+        setExpiredMealPlanOpen(true);
+        return;
+      }
       setSheetOpen(false);
       setAddedMealPlanId(actionRecipe.id);
       setTimeout(() => setAddedMealPlanId(null), 900);
     } finally {
       setMealPlanSaving(false);
+    }
+  };
+
+  const resolveExpiredMealPlan = async (mode) => {
+    if (!actionRecipe) return;
+    setExpiredMealPlanAction(mode);
+    try {
+      await addMealPlanItem(Number(actionRecipe.id), mode);
+      setExpiredMealPlanOpen(false);
+      setAddedMealPlanId(actionRecipe.id);
+      setTimeout(() => setAddedMealPlanId(null), 900);
+    } finally {
+      setExpiredMealPlanAction("");
     }
   };
 
@@ -499,6 +538,15 @@ function Home() {
         onPick={handlePickMenu}
         savingMenuId={savingMenuId}
       />
+
+      <ExpiredMealPlanSheet
+        open={expiredMealPlanOpen}
+        onClose={() => setExpiredMealPlanOpen(false)}
+        onContinue={() => resolveExpiredMealPlan("continue")}
+        onComplete={() => resolveExpiredMealPlan("complete")}
+        onCancelPlan={() => resolveExpiredMealPlan("cancel")}
+        loadingAction={expiredMealPlanAction}
+      />
     </div>
   );
 }
@@ -570,6 +618,8 @@ function MenuDetail() {
   const [renaming, setRenaming] = useState(false);
   const [mealPlanSaving, setMealPlanSaving] = useState(false);
   const [addedMealPlanItemId, setAddedMealPlanItemId] = useState(null);
+  const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
+  const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
 
   const reload = () => {
     setStatus("loading");
@@ -603,12 +653,31 @@ function MenuDetail() {
     if (!item || mealPlanSaving) return;
     setMealPlanSaving(true);
     try {
-      await addMealPlanItem(item.recipe_id);
+      const result = await addMealPlanItem(item.recipe_id, "ask");
+      if (result.status === "expired_confirmation_required") {
+        setActionItem(item);
+        setExpiredMealPlanOpen(true);
+        return;
+      }
       setActionItem(null);
       setAddedMealPlanItemId(item.id);
       setTimeout(() => setAddedMealPlanItemId(null), 900);
     } finally {
       setMealPlanSaving(false);
+    }
+  };
+
+  const resolveExpiredMealPlan = async (mode) => {
+    if (!actionItem) return;
+    setExpiredMealPlanAction(mode);
+    try {
+      await addMealPlanItem(actionItem.recipe_id, mode);
+      setExpiredMealPlanOpen(false);
+      setActionItem(null);
+      setAddedMealPlanItemId(actionItem.id);
+      setTimeout(() => setAddedMealPlanItemId(null), 900);
+    } finally {
+      setExpiredMealPlanAction("");
     }
   };
 
@@ -784,6 +853,15 @@ function MenuDetail() {
         onClose={() => setCategoryItem(null)}
         onSubmit={saveCategoryChange}
       />
+
+      <ExpiredMealPlanSheet
+        open={expiredMealPlanOpen}
+        onClose={() => setExpiredMealPlanOpen(false)}
+        onContinue={() => resolveExpiredMealPlan("continue")}
+        onComplete={() => resolveExpiredMealPlan("complete")}
+        onCancelPlan={() => resolveExpiredMealPlan("cancel")}
+        loadingAction={expiredMealPlanAction}
+      />
     </div>
   );
 }
@@ -802,6 +880,8 @@ function RecipesList() {
   const [savingMenuId, setSavingMenuId] = useState(null);
   const [successRecipeId, setSuccessRecipeId] = useState(null);
   const [mealPlanSaving, setMealPlanSaving] = useState(false);
+  const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
+  const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
   const navigate = useNavigate();
 
   const loadAll = () => {
@@ -850,12 +930,30 @@ function RecipesList() {
     if (!activeRecipeId || mealPlanSaving) return;
     setMealPlanSaving(true);
     try {
-      await addMealPlanItem(activeRecipeId);
+      const result = await addMealPlanItem(activeRecipeId, "ask");
+      if (result.status === "expired_confirmation_required") {
+        setActionSheetOpen(false);
+        setExpiredMealPlanOpen(true);
+        return;
+      }
       setActionSheetOpen(false);
       setSuccessRecipeId(activeRecipeId);
       setTimeout(() => setSuccessRecipeId(null), 900);
     } finally {
       setMealPlanSaving(false);
+    }
+  };
+
+  const resolveExpiredMealPlan = async (mode) => {
+    if (!activeRecipeId) return;
+    setExpiredMealPlanAction(mode);
+    try {
+      await addMealPlanItem(activeRecipeId, mode);
+      setExpiredMealPlanOpen(false);
+      setSuccessRecipeId(activeRecipeId);
+      setTimeout(() => setSuccessRecipeId(null), 900);
+    } finally {
+      setExpiredMealPlanAction("");
     }
   };
 
@@ -946,6 +1044,15 @@ function RecipesList() {
         onPick={handlePickMenu}
         savingMenuId={savingMenuId}
       />
+
+      <ExpiredMealPlanSheet
+        open={expiredMealPlanOpen}
+        onClose={() => setExpiredMealPlanOpen(false)}
+        onContinue={() => resolveExpiredMealPlan("continue")}
+        onComplete={() => resolveExpiredMealPlan("complete")}
+        onCancelPlan={() => resolveExpiredMealPlan("cancel")}
+        loadingAction={expiredMealPlanAction}
+      />
     </div>
   );
 }
@@ -964,6 +1071,8 @@ function RecipeDetail() {
   const [mealPlanSaving, setMealPlanSaving] = useState(false);
   const [addedSuccess, setAddedSuccess] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
+  const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
 
   const reload = () => {
     setStatus("loading");
@@ -1005,12 +1114,30 @@ function RecipeDetail() {
     if (!recipe || mealPlanSaving) return;
     setMealPlanSaving(true);
     try {
-      await addMealPlanItem(recipe.id);
+      const result = await addMealPlanItem(recipe.id, "ask");
+      if (result.status === "expired_confirmation_required") {
+        setActionSheetOpen(false);
+        setExpiredMealPlanOpen(true);
+        return;
+      }
       setActionSheetOpen(false);
       setAddedSuccess(true);
       setTimeout(() => setAddedSuccess(false), 900);
     } finally {
       setMealPlanSaving(false);
+    }
+  };
+
+  const resolveExpiredMealPlan = async (mode) => {
+    if (!recipe) return;
+    setExpiredMealPlanAction(mode);
+    try {
+      await addMealPlanItem(recipe.id, mode);
+      setExpiredMealPlanOpen(false);
+      setAddedSuccess(true);
+      setTimeout(() => setAddedSuccess(false), 900);
+    } finally {
+      setExpiredMealPlanAction("");
     }
   };
 
@@ -1139,6 +1266,15 @@ function RecipeDetail() {
         onPick={handlePickMenu}
         savingMenuId={savingMenuId}
       />
+
+      <ExpiredMealPlanSheet
+        open={expiredMealPlanOpen}
+        onClose={() => setExpiredMealPlanOpen(false)}
+        onContinue={() => resolveExpiredMealPlan("continue")}
+        onComplete={() => resolveExpiredMealPlan("complete")}
+        onCancelPlan={() => resolveExpiredMealPlan("cancel")}
+        loadingAction={expiredMealPlanAction}
+      />
     </div>
   );
 }
@@ -1152,8 +1288,10 @@ function Plan() {
   const [actionItem, setActionItem] = useState(null);
   const [removingItemId, setRemovingItemId] = useState(null);
   const [completing, setCompleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resumingId, setResumingId] = useState(null);
+  const [copyingId, setCopyingId] = useState(null);
   const [renaming, setRenaming] = useState(false);
   const listBottomRef = useRef(null);
 
@@ -1217,6 +1355,18 @@ function Plan() {
     }
   };
 
+  const cancelCurrent = async () => {
+    if (!currentMealPlan || cancelling) return;
+    setCancelling(true);
+    try {
+      await cancelMealPlan(currentMealPlan.id);
+      await loadMealPlans();
+      setView("list");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const resumePlan = async (mealPlanId) => {
     setResumingId(mealPlanId);
     try {
@@ -1226,6 +1376,18 @@ function Plan() {
       setView("detail");
     } finally {
       setResumingId(null);
+    }
+  };
+
+  const copyPlan = async (mealPlanId) => {
+    setCopyingId(mealPlanId);
+    try {
+      const copied = await copyMealPlan(mealPlanId);
+      setCurrentMealPlan(copied);
+      await loadMealPlans();
+      setView("detail");
+    } finally {
+      setCopyingId(null);
     }
   };
 
@@ -1257,7 +1419,10 @@ function Plan() {
             <button onClick={() => setView("list")} className="rounded-xl bg-gray-100 px-3 py-2 text-sm">
               返回列表
             </button>
-            <div className="font-bold">{currentMealPlan.name}</div>
+            <div className="text-center">
+              <div className="font-bold">{currentMealPlan.name}</div>
+              <div className="text-xs text-gray-500">预计完成：{currentMealPlan.expected_finish_at ? new Date(currentMealPlan.expected_finish_at).toLocaleString() : "未设置"}</div>
+            </div>
             <IconButton onClick={renameCurrent} disabled={renaming} title="修改标题">
               ✎
             </IconButton>
@@ -1292,6 +1457,9 @@ function Plan() {
               <button onClick={completeCurrent} disabled={completing} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">
                 {completing ? "完成中" : "完成餐单"}
               </button>
+              <button onClick={cancelCurrent} disabled={cancelling} className="flex-1 rounded-xl bg-yellow-50 p-3 text-yellow-700 disabled:opacity-40">
+                {cancelling ? "取消中" : "取消餐单"}
+              </button>
               <button onClick={deleteCurrent} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">
                 {deleting ? "删除中" : "删除餐单"}
               </button>
@@ -1306,14 +1474,19 @@ function Plan() {
             {mealPlans.map((plan) => (
               <div key={plan.id} className="rounded-2xl bg-white p-3 shadow">
                 <div className="font-semibold">{plan.name}</div>
-                <div className="mb-2 text-xs text-gray-500">{plan.item_count} 道菜 · {plan.status === "editing" ? "编辑中" : "已完成"}</div>
+                <div className="mb-2 text-xs text-gray-500">{plan.item_count} 道菜 · {plan.status === "editing" ? "编辑中" : plan.status === "completed" ? "已完成" : "已取消"}</div>
                 <div className="flex gap-2">
                   <button onClick={async () => { const detail = await getMealPlan(plan.id); setCurrentMealPlan(detail); setView("detail"); }} className="flex-1 rounded-xl bg-gray-100 p-2 text-sm">
                     查看
                   </button>
-                  {plan.status === "completed" ? (
+                  {plan.status !== "editing" ? (
                     <button onClick={() => resumePlan(plan.id)} disabled={resumingId === plan.id} className="flex-1 rounded-xl bg-black p-2 text-sm text-white disabled:opacity-40">
                       {resumingId === plan.id ? "恢复中" : "恢复编辑中"}
+                    </button>
+                  ) : null}
+                  {plan.status !== "editing" ? (
+                    <button onClick={() => copyPlan(plan.id)} disabled={copyingId === plan.id} className="flex-1 rounded-xl bg-gray-100 p-2 text-sm disabled:opacity-40">
+                      {copyingId === plan.id ? "复制中" : "复制为新餐单"}
                     </button>
                   ) : null}
                 </div>

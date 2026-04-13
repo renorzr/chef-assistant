@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas import MealPlanItemCreateRequest, MealPlanRead, MealPlanSummaryRead, MealPlanUpdateRequest
+from schemas import MealPlanAddItemResponse, MealPlanItemCreateRequest, MealPlanRead, MealPlanSummaryRead, MealPlanUpdateRequest
 from services.meal_plan_service import (
     add_recipe_to_current_meal_plan,
     complete_meal_plan,
+    copy_meal_plan,
+    cancel_meal_plan,
     delete_meal_plan,
     ensure_current_meal_plan,
     get_current_meal_plan,
@@ -31,7 +33,7 @@ def ensure_current_meal_plan_endpoint(db: Session = Depends(get_db)):
     return ensure_current_meal_plan(db)
 
 
-@router.post("/meal-plans/current/items", response_model=MealPlanRead)
+@router.post("/meal-plans/current/items", response_model=MealPlanAddItemResponse)
 def add_recipe_to_current_meal_plan_endpoint(payload: MealPlanItemCreateRequest, db: Session = Depends(get_db)):
     try:
         return add_recipe_to_current_meal_plan(db, payload)
@@ -84,9 +86,25 @@ def complete_meal_plan_endpoint(meal_plan_id: int, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.post("/meal-plans/{meal_plan_id}/cancel", response_model=MealPlanRead)
+def cancel_meal_plan_endpoint(meal_plan_id: int, db: Session = Depends(get_db)):
+    try:
+        return cancel_meal_plan(db, meal_plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.post("/meal-plans/{meal_plan_id}/resume", response_model=MealPlanRead)
 def resume_meal_plan_endpoint(meal_plan_id: int, db: Session = Depends(get_db)):
     try:
         return resume_meal_plan(db, meal_plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/meal-plans/{meal_plan_id}/copy", response_model=MealPlanRead)
+def copy_meal_plan_endpoint(meal_plan_id: int, db: Session = Depends(get_db)):
+    try:
+        return copy_meal_plan(db, meal_plan_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

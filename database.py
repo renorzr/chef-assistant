@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config import load_env_file
@@ -34,6 +34,25 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def run_common_migrations() -> None:
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        tables = set(inspector.get_table_names())
+
+        if "meal_plans" in tables:
+            meal_plan_cols = {col["name"] for col in inspector.get_columns("meal_plans")}
+            if "expected_finish_at" not in meal_plan_cols:
+                conn.execute(text("ALTER TABLE meal_plans ADD COLUMN expected_finish_at TIMESTAMP NULL"))
+                migration_sql = (
+                    text("UPDATE meal_plans SET expected_finish_at = datetime(created_at, '+24 hours') WHERE expected_finish_at IS NULL")
+                    if DATABASE_URL.startswith("sqlite")
+                    else text("UPDATE meal_plans SET expected_finish_at = created_at + INTERVAL '24 hours' WHERE expected_finish_at IS NULL")
+                )
+                conn.execute(migration_sql)
+            if "cancelled_at" not in meal_plan_cols:
+                conn.execute(text("ALTER TABLE meal_plans ADD COLUMN cancelled_at TIMESTAMP NULL"))
 
 
 def run_sqlite_migrations() -> None:
@@ -80,6 +99,23 @@ def run_sqlite_migrations() -> None:
             if "auto_commit" not in run_cols:
                 conn.exec_driver_sql(
                     "ALTER TABLE xiachufang_recommended_runs ADD COLUMN auto_commit INTEGER NOT NULL DEFAULT 1"
+                )
+
+        if "meal_plans" in tables:
+            meal_plan_cols = {
+                row[1]
+                for row in conn.exec_driver_sql("PRAGMA table_info('meal_plans')")
+            }
+            if "expected_finish_at" not in meal_plan_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE meal_plans ADD COLUMN expected_finish_at TIMESTAMP"
+                )
+                conn.exec_driver_sql(
+                    "UPDATE meal_plans SET expected_finish_at = datetime(created_at, '+24 hours') WHERE expected_finish_at IS NULL"
+                )
+            if "cancelled_at" not in meal_plan_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE meal_plans ADD COLUMN cancelled_at TIMESTAMP"
                 )
 
 

@@ -8,10 +8,10 @@ export function ensureCurrentMealPlan() {
   return apiFetch("/meal-plans/current/ensure", { method: "POST" });
 }
 
-export function addMealPlanItem(recipeId) {
+export function addMealPlanItem(recipeId, onExpired = "ask") {
   return apiFetch("/meal-plans/current/items", {
     method: "POST",
-    body: JSON.stringify({ recipe_id: recipeId })
+    body: JSON.stringify({ recipe_id: recipeId, on_expired: onExpired })
   });
 }
 
@@ -38,8 +38,16 @@ export function completeMealPlan(mealPlanId) {
   return apiFetch(`/meal-plans/${mealPlanId}/complete`, { method: "POST" });
 }
 
+export function cancelMealPlan(mealPlanId) {
+  return apiFetch(`/meal-plans/${mealPlanId}/cancel`, { method: "POST" });
+}
+
 export function resumeMealPlan(mealPlanId) {
   return apiFetch(`/meal-plans/${mealPlanId}/resume`, { method: "POST" });
+}
+
+export function copyMealPlan(mealPlanId) {
+  return apiFetch(`/meal-plans/${mealPlanId}/copy`, { method: "POST" });
 }
 
 export function deleteMealPlan(mealPlanId) {

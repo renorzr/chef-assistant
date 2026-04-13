@@ -221,7 +221,9 @@ class MealPlanRead(BaseModel):
     id: int
     name: str
     status: str
+    expected_finish_at: Optional[str] = None
     completed_at: Optional[str] = None
+    cancelled_at: Optional[str] = None
     items: List[MealPlanItemRead]
 
 
@@ -230,16 +232,25 @@ class MealPlanSummaryRead(BaseModel):
     name: str
     status: str
     item_count: int = 0
+    expected_finish_at: Optional[str] = None
     completed_at: Optional[str] = None
+    cancelled_at: Optional[str] = None
     updated_at: Optional[str] = None
 
 
 class MealPlanItemCreateRequest(BaseModel):
     recipe_id: int = Field(..., ge=1)
+    on_expired: str = Field(default="ask")
 
 
 class MealPlanUpdateRequest(BaseModel):
     name: str = Field(..., min_length=1)
+
+
+class MealPlanAddItemResponse(BaseModel):
+    status: str
+    message: str
+    meal_plan: MealPlanRead
 
 
 

@@ -64,6 +64,30 @@ Notes:
 - Frontend chat page calls a mocked `POST /chat/messages` flow for now.
 - Frontend API calls use `/api/*` and are proxied by Vite to backend `http://127.0.0.1:8000`.
 
+### 2.2) Run with Docker
+
+Build and run the single application container:
+
+```bash
+docker compose up --build
+```
+
+This serves both backend and built frontend from the same container at:
+
+- App: `http://127.0.0.1:8000`
+
+If you also want Docker Compose to start PostgreSQL, use the `with-db` profile:
+
+```bash
+docker compose --profile with-db up --build
+```
+
+When using the Compose-managed PostgreSQL service, set `DATABASE_URL` in `.env` to something like:
+
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/chef_assistant
+```
+
 ### 3) Open API docs
 
 - Swagger UI: `http://127.0.0.1:8000/docs`

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from database import engine, SessionLocal, run_sqlite_migrations, cleanup_placeholder_media
+from database import engine, SessionLocal, run_sqlite_migrations, run_common_migrations, cleanup_placeholder_media
 from models import Base
 from routers.recipes import router as recipes_router
 from routers.chat import router as chat_router
@@ -104,6 +104,7 @@ async def _embedding_audit_loop(stop_event: asyncio.Event) -> None:
 @app.on_event("startup")
 async def on_startup():
     Base.metadata.create_all(bind=engine)
+    run_common_migrations()
     run_sqlite_migrations()
     cleanup_placeholder_media()
     with SessionLocal() as db:
