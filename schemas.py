@@ -6,6 +6,8 @@ class RecipeIngredientCreate(BaseModel):
     name: str = Field(..., min_length=1)
     amount: Optional[str] = None
     unit: Optional[str] = None
+    note: Optional[str] = None
+    optional: bool = False
     is_main: bool = False
 
 
@@ -46,6 +48,8 @@ class RecipeIngredientRead(BaseModel):
     name: str
     amount: Optional[str] = None
     unit: Optional[str] = None
+    note: Optional[str] = None
+    optional: bool
     is_main: bool
 
     model_config = ConfigDict(from_attributes=True)

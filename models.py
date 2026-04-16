@@ -68,6 +68,8 @@ class RecipeIngredient(Base):
 
     amount = Column(String(50), nullable=True)
     unit = Column(String(50), nullable=True)
+    note = Column(Text, nullable=True)
+    optional = Column(Integer, nullable=False, default=0)
     is_main = Column(Integer, nullable=False, default=0)
 
     recipe = relationship("Recipe", back_populates="recipe_ingredients")

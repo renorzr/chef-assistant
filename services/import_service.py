@@ -23,6 +23,7 @@ from schemas import (
 )
 from services.recipe_service import create_recipe
 from services.recipe_parser_llm import parse_recipe_with_llm, RecipeParserError
+from services.ingredient_service import normalize_ingredient_entry, parse_ingredient_lines_with_llm
 
 
 SUPPORTED_DOMAIN = "xiachufang.com"
@@ -213,12 +214,42 @@ def _guess_difficulty(name: str, steps: list[str]) -> str:
 
 def _ingredient_line_to_struct(line: str) -> dict[str, Any]:
     clean = re.sub(r"\s+", " ", line).strip()
+    name, amount, unit = normalize_ingredient_entry(clean)
     return {
-        "name": clean,
-        "amount": None,
-        "unit": None,
+        "name": name or clean,
+        "amount": amount,
+        "unit": unit,
+        "note": None,
+        "optional": False,
         "is_main": False,
     }
+
+
+def _ingredient_lines_to_structured(lines: list[str]) -> list[dict[str, Any]]:
+    parsed = parse_ingredient_lines_with_llm(lines)
+    ingredients: list[dict[str, Any]] = []
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        for item in row.get("items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            ingredients.append(
+                {
+                    "name": name,
+                    "amount": item.get("amount"),
+                    "unit": item.get("unit"),
+                    "note": item.get("note"),
+                    "optional": bool(item.get("optional", False)),
+                    "is_main": bool(item.get("is_main", False)),
+                }
+            )
+    if ingredients and not any(x["is_main"] for x in ingredients):
+        ingredients[0]["is_main"] = True
+    return ingredients
 
 
 def _detect_challenge(html_text: str) -> bool:
@@ -521,7 +552,7 @@ def _build_recipe_draft_from_html_fallback(html_text: str, source_url: str) -> d
         cleaned = [x for x in cleaned if len(x) > 6][:12]
         steps = [{"step_order": i + 1, "instruction": txt, "image_url": None} for i, txt in enumerate(cleaned)]
 
-    ingredients = [_ingredient_line_to_struct(x) for x in ingredient_lines if x]
+    ingredients = _ingredient_lines_to_structured([x for x in ingredient_lines if x])
     if ingredients:
         ingredients[0]["is_main"] = True
 

@@ -20,6 +20,7 @@ from routers.media import router as media_router
 from seed_data import seed_sample_data
 from services.embedding_audit_service import get_audit_config, run_audit_once
 from services.import_service import get_recommended_import_daily_config, run_recommended_import_daily_once
+from services.recipe_service import normalize_existing_ingredients
 
 app = FastAPI(title="AI Cooking Assistant MVP", version="1.0.0")
 FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
@@ -109,6 +110,7 @@ async def on_startup():
     cleanup_placeholder_media()
     with SessionLocal() as db:
         seed_sample_data(db)
+        normalize_existing_ingredients(db)
 
     global _audit_stop_event, _audit_task, _recommended_stop_event, _recommended_task
     _audit_stop_event = asyncio.Event()

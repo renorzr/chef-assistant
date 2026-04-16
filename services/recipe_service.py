@@ -26,6 +26,7 @@ from services.vector_service import (
     delete_recipe_embedding,
 )
 from services.embedding_provider import EmbeddingProviderError
+from services.ingredient_service import normalize_ingredient_entry
 
 
 def _normalize_text(value: str) -> str:
@@ -80,7 +81,9 @@ def _passes_recipe_filters(recipe: Recipe, max_cook_time_minutes: int | None, di
 
 
 def get_or_create_ingredient(db: Session, name: str) -> Ingredient:
-    normalized = _normalize_text(name)
+    normalized, _, _ = normalize_ingredient_entry(name)
+    if not normalized:
+        raise ValueError("Ingredient name cannot be empty.")
     existing = db.execute(
         select(Ingredient).where(Ingredient.name == normalized)
     ).scalar_one_or_none()
@@ -102,6 +105,8 @@ def _to_recipe_read(recipe: Recipe) -> RecipeRead:
             name=ri.ingredient.name,
             amount=ri.amount,
             unit=ri.unit,
+            note=ri.note,
+            optional=bool(ri.optional),
             is_main=bool(ri.is_main),
         )
         for ri in recipe.recipe_ingredients
@@ -165,12 +170,17 @@ def create_recipe(db: Session, payload: RecipeCreate) -> RecipeRead:
     chosen_main = recipe.main_ingredient
 
     for item in payload.ingredients:
-        ing = get_or_create_ingredient(db, item.name)
+        normalized_name, normalized_amount, normalized_unit = normalize_ingredient_entry(item.name, item.amount, item.unit)
+        if not normalized_name:
+            continue
+        ing = get_or_create_ingredient(db, normalized_name)
         link = RecipeIngredient(
             recipe_id=recipe.id,
             ingredient_id=ing.id,
-            amount=item.amount,
-            unit=item.unit,
+            amount=normalized_amount,
+            unit=normalized_unit,
+            note=item.note.strip() if item.note else None,
+            optional=1 if item.optional else 0,
             is_main=1 if item.is_main else 0,
         )
         db.add(link)
@@ -179,7 +189,7 @@ def create_recipe(db: Session, payload: RecipeCreate) -> RecipeRead:
             chosen_main = ing.name
 
     if not chosen_main and payload.ingredients:
-        chosen_main = _normalize_text(payload.ingredients[0].name)
+        chosen_main, _, _ = normalize_ingredient_entry(payload.ingredients[0].name, payload.ingredients[0].amount, payload.ingredients[0].unit)
 
     recipe.main_ingredient = chosen_main
 
@@ -255,12 +265,17 @@ def update_recipe(db: Session, recipe_id: int, payload: RecipeCreate) -> RecipeR
     chosen_main = recipe.main_ingredient
 
     for item in payload.ingredients:
-        ing = get_or_create_ingredient(db, item.name)
+        normalized_name, normalized_amount, normalized_unit = normalize_ingredient_entry(item.name, item.amount, item.unit)
+        if not normalized_name:
+            continue
+        ing = get_or_create_ingredient(db, normalized_name)
         recipe.recipe_ingredients.append(
             RecipeIngredient(
                 ingredient_id=ing.id,
-                amount=item.amount,
-                unit=item.unit,
+                amount=normalized_amount,
+                unit=normalized_unit,
+                note=item.note.strip() if item.note else None,
+                optional=1 if item.optional else 0,
                 is_main=1 if item.is_main else 0,
             )
         )
@@ -269,7 +284,7 @@ def update_recipe(db: Session, recipe_id: int, payload: RecipeCreate) -> RecipeR
             chosen_main = ing.name
 
     if not chosen_main and payload.ingredients:
-        chosen_main = _normalize_text(payload.ingredients[0].name)
+        chosen_main, _, _ = normalize_ingredient_entry(payload.ingredients[0].name, payload.ingredients[0].amount, payload.ingredients[0].unit)
 
     recipe.main_ingredient = chosen_main
 
@@ -331,6 +346,81 @@ def get_recipe_by_id(db: Session, recipe_id: int) -> RecipeRead | None:
     if not recipe:
         return None
     return _to_recipe_read(recipe)
+
+
+def normalize_existing_ingredients(db: Session) -> None:
+    rows = db.execute(
+        select(RecipeIngredient)
+        .options(selectinload(RecipeIngredient.ingredient))
+        .order_by(RecipeIngredient.id.asc())
+    ).scalars().all()
+
+    changed = False
+    for row in rows:
+        if not row.ingredient:
+            continue
+
+        normalized_name, normalized_amount, normalized_unit = normalize_ingredient_entry(
+            row.ingredient.name,
+            row.amount,
+            row.unit,
+        )
+        if not normalized_name:
+            continue
+
+        target = get_or_create_ingredient(db, normalized_name)
+
+        duplicate = db.execute(
+            select(RecipeIngredient).where(
+                RecipeIngredient.recipe_id == row.recipe_id,
+                RecipeIngredient.ingredient_id == target.id,
+                RecipeIngredient.id != row.id,
+            )
+        ).scalar_one_or_none()
+
+        if duplicate:
+            if not duplicate.amount and normalized_amount:
+                duplicate.amount = normalized_amount
+            if not duplicate.unit and normalized_unit:
+                duplicate.unit = normalized_unit
+            if not duplicate.is_main and row.is_main:
+                duplicate.is_main = row.is_main
+            if not duplicate.note and row.note:
+                duplicate.note = row.note
+            if not duplicate.optional and row.optional:
+                duplicate.optional = row.optional
+            db.delete(row)
+            changed = True
+            continue
+
+        if row.ingredient_id != target.id:
+            row.ingredient_id = target.id
+            changed = True
+        if row.amount != normalized_amount:
+            row.amount = normalized_amount
+            changed = True
+        if row.unit != normalized_unit:
+            row.unit = normalized_unit
+            changed = True
+        if row.note and row.note.strip() == row.ingredient.name:
+            row.note = None
+            changed = True
+
+    db.flush()
+
+    orphan_ids = db.execute(
+        select(Ingredient.id)
+        .outerjoin(RecipeIngredient, RecipeIngredient.ingredient_id == Ingredient.id)
+        .where(RecipeIngredient.id.is_(None))
+    ).scalars().all()
+    for ingredient_id in orphan_ids:
+        ingredient = db.get(Ingredient, ingredient_id)
+        if ingredient:
+            db.delete(ingredient)
+            changed = True
+
+    if changed:
+        db.commit()
 
 
 def search_recipes_by_vector(db: Session, payload: VectorSearchRequest) -> VectorSearchResponse:

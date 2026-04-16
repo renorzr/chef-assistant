@@ -54,6 +54,13 @@ def run_common_migrations() -> None:
             if "cancelled_at" not in meal_plan_cols:
                 conn.execute(text("ALTER TABLE meal_plans ADD COLUMN cancelled_at TIMESTAMP NULL"))
 
+        if "recipe_ingredients" in tables:
+            recipe_ing_cols = {col["name"] for col in inspector.get_columns("recipe_ingredients")}
+            if "note" not in recipe_ing_cols:
+                conn.execute(text("ALTER TABLE recipe_ingredients ADD COLUMN note TEXT NULL"))
+            if "optional" not in recipe_ing_cols:
+                conn.execute(text("ALTER TABLE recipe_ingredients ADD COLUMN optional INTEGER NOT NULL DEFAULT 0"))
+
 
 def run_sqlite_migrations() -> None:
     if not DATABASE_URL.startswith("sqlite"):
@@ -116,6 +123,20 @@ def run_sqlite_migrations() -> None:
             if "cancelled_at" not in meal_plan_cols:
                 conn.exec_driver_sql(
                     "ALTER TABLE meal_plans ADD COLUMN cancelled_at TIMESTAMP"
+                )
+
+        if "recipe_ingredients" in tables:
+            recipe_ing_cols = {
+                row[1]
+                for row in conn.exec_driver_sql("PRAGMA table_info('recipe_ingredients')")
+            }
+            if "note" not in recipe_ing_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE recipe_ingredients ADD COLUMN note TEXT"
+                )
+            if "optional" not in recipe_ing_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE recipe_ingredients ADD COLUMN optional INTEGER NOT NULL DEFAULT 0"
                 )
 
 

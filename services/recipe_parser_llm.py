@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from config import load_env_file
+from services.ingredient_service import normalize_ingredient_entry
 
 load_env_file()
 
@@ -107,14 +108,20 @@ def _normalize_draft(draft: dict[str, Any], source_url: str) -> dict[str, Any]:
     for row in ingredients_raw:
         if not isinstance(row, dict):
             continue
-        ing_name = str(row.get("name") or "").strip()
+        ing_name, amount, unit = normalize_ingredient_entry(
+            str(row.get("name") or ""),
+            row.get("amount"),
+            row.get("unit"),
+        )
         if not ing_name:
             continue
         ingredients.append(
             {
                 "name": ing_name,
-                "amount": row.get("amount"),
-                "unit": row.get("unit"),
+                "amount": amount,
+                "unit": unit,
+                "note": str(row.get("note") or "").strip() or None,
+                "optional": bool(row.get("optional", False)),
                 "is_main": bool(row.get("is_main", False)),
             }
         )
@@ -232,7 +239,7 @@ def parse_recipe_with_llm(html_text: str, source_url: str) -> dict[str, Any]:
         "dish_type": "meat|vegetable|other",
         "cooking_method": "string",
         "ingredients": [
-            {"name": "string", "amount": "string|null", "unit": "string|null", "is_main": "boolean"}
+            {"name": "string", "amount": "string|null", "unit": "string|null", "note": "string|null", "optional": "boolean", "is_main": "boolean"}
         ],
         "steps": [{"step_order": "integer", "instruction": "string", "image_url": "string|null"}],
         "media": [{"media_type": "image|video", "url": "string"}],
@@ -249,6 +256,7 @@ def parse_recipe_with_llm(html_text: str, source_url: str) -> dict[str, Any]:
         "`下饭菜鱼香茄子的经典做法` -> `鱼香茄子`; "
         "`一根大葱，2块钱豆腐，3分钟做一道葱烧豆腐...` -> `葱烧豆腐`. "
         "When available, include per-step image URLs in steps[].image_url. "
+        "For ingredients, preserve fuzzy instructions like '按人数调整' or '根据口味调整' in note, and mark optional ingredients with optional=true. "
         "Do not include markdown fences or extra text."
     )
 
