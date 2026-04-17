@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from models import ChatSession, ChatMessage
 from config import load_env_file
 from schemas import (
+    ChatAction,
     ChatMessageRequest,
     ChatMessageResponse,
     ChatCard,
@@ -58,14 +59,16 @@ def _build_llm_prompt(payload: ChatMessageRequest) -> str:
         "请先理解用户意图，再输出一个严格 JSON 对象。"
         "不要输出 markdown，不要输出代码块，不要输出解释性前缀。"
         "JSON schema 如下：\n"
-        '{"reply_text":"string","action":{"type":"list_menus|search_recipes|get_recipe|go_plan|none","query":"string|null","id":"string|null","limit":3}}\n'
+        '{"reply_text":"string","action":{"type":"list_menus|search_recipes|get_recipe|go_plan|import_xiachufang_recipe|import_xiachufang_homepage|none","query":"string|null","id":"string|null","url":"string|null","limit":3}}\n'
         "规则：\n"
         "1. 用户想看常用菜单、推荐菜单、菜单列表时，用 list_menus。\n"
         "2. 用户在找菜谱、按口味/食材/做法搜索时，用 search_recipes，并填写 query。\n"
         "3. 只有用户明确提到具体 recipe id 时，才用 get_recipe。\n"
-        "4. 不要编造菜单或菜谱 id；除 get_recipe 外，不需要返回真实 id。\n"
-        "5. 若只是普通闲聊、无法确定、或不需要卡片，使用 none。\n"
-        "6. reply_text 使用自然中文，简洁友好。\n"
+        "4. 如果用户提供下厨房单个菜谱链接，使用 import_xiachufang_recipe，并填写 url。\n"
+        "5. 如果用户要求导入下厨房首页/推荐菜谱，使用 import_xiachufang_homepage。\n"
+        "6. 不要编造菜单或菜谱 id；除 get_recipe 外，不需要返回真实 id。\n"
+        "7. 若只是普通闲聊、无法确定、或不需要卡片，使用 none。\n"
+        "8. reply_text 使用自然中文，简洁友好。\n"
         f"当前页面上下文: {json.dumps(payload.context, ensure_ascii=False)}\n"
         f"用户消息: {payload.message}"
     )
@@ -296,6 +299,27 @@ def _cards_from_action(db: Session, action: dict[str, Any]) -> list[ChatCard]:
     return []
 
 
+def _execute_import_action(db: Session, action: dict[str, Any]) -> tuple[str | None, list[ChatCard]]:
+    action_type = str(action.get("type") or "none").strip()
+
+    if action_type == "import_xiachufang_recipe":
+        url = str(action.get("url") or "").strip()
+        if not url:
+            return "我没有识别到有效的下厨房菜谱链接。", []
+        return (
+            "我已识别到这个下厨房菜谱链接。请在 App 内打开该页面，完成验证后由 App 提交页面 HTML 给后端导入。",
+            [],
+        )
+
+    if action_type == "import_xiachufang_homepage":
+        return (
+            "我已识别到你要导入下厨房首页推荐菜。请在 App 内打开下厨房首页，完成验证后由 App 抓取推荐菜链接，并分别提交每个菜谱页面 HTML 给后端导入。",
+            [],
+        )
+
+    return None, []
+
+
 def _get_or_create_session(db: Session, session_id: str) -> ChatSession:
     session = db.query(ChatSession).filter(ChatSession.session_id == session_id).one_or_none()
     if session:
@@ -430,11 +454,20 @@ def send_chat_message_via_openclaw(db: Session, payload: ChatMessageRequest) -> 
         action = {"type": "none"}
 
     try:
-        cards = _cards_from_action(db, action)
+        override_reply, import_cards = _execute_import_action(db, action)
+        cards = import_cards if import_cards else _cards_from_action(db, action)
+        if override_reply:
+            reply_text = override_reply
     except Exception:
         cards = []
 
     _save_message(db, session, "assistant", reply_text, cards)
     db.commit()
 
-    return ChatMessageResponse(session_id=session_id, reply_text=reply_text, cards=cards)
+    chat_action = None
+    try:
+        chat_action = ChatAction(**action)
+    except Exception:
+        chat_action = ChatAction(type="none")
+
+    return ChatMessageResponse(session_id=session_id, reply_text=reply_text, cards=cards, action=chat_action)

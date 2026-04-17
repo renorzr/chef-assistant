@@ -495,6 +495,17 @@ function Home() {
                             />
                           );
                         }
+                        if (card.type === "external_link") {
+                          return (
+                            <LinkCard
+                              key={idx}
+                              title={card.title}
+                              subtitle={card.subtitle}
+                              type="验证"
+                              onClick={() => window.open(card.id, "_blank")}
+                            />
+                          );
+                        }
                         return <LinkCard key={idx} title={card.title} subtitle={card.subtitle} type="计划" onClick={() => navigate("/plan")} />;
                       })
                     : null}

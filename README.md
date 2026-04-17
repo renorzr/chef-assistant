@@ -22,10 +22,8 @@ FastAPI + SQLite/PostgreSQL backend for recipe management, menu generation, vect
   - Audit status: `GET /admin/embeddings/audit`
   - Repair missing embeddings: `POST /admin/embeddings/repair-missing`
 - Import from link (Xiachufang)
-  - Challenge-aware state machine with user intervention (cookies or manual HTML)
+  - Import recipe pages from App-provided HTML
   - LLM-based recipe parsing with fallback parser
-  - Import all homepage recommended recipes
-  - Daily scheduled recommended import
 
 ## Tech Stack
 
@@ -133,14 +131,6 @@ CHAT_LLM_BASE_URL=https://api.ofox.ai/v1
 CHAT_LLM_API_KEY=your_ofox_api_key
 CHAT_LLM_MODEL=your_chat_model_name
 CHAT_LLM_TIMEOUT_SECONDS=30
-
-XCF_RECOMMENDED_DAILY_ENABLED=true
-XCF_RECOMMENDED_DAILY_TIME=06:00
-XCF_RECOMMENDED_DAILY_TZ=Asia/Shanghai
-XCF_RECOMMENDED_MAX_LINKS=30
-XCF_RECOMMENDED_AUTO_COMMIT=true
-XCF_RECOMMENDED_HOMEPAGE_URL=https://www.xiachufang.com/
-XCF_RECOMMENDED_COOKIE=
 ```
 
 - Strict behavior for vector/hybrid search
@@ -266,95 +256,29 @@ curl -X POST "http://127.0.0.1:8000/admin/embeddings/repair-missing" \
   }'
 ```
 
-## Xiachufang Import Flow (Challenge-Aware)
+## Xiachufang Import From HTML
 
-### Step 1: Create import job
+The backend no longer fetches Xiachufang pages directly. In the recommended architecture, your App opens the Xiachufang page, the user completes any verification there, then the App submits the final page HTML to this backend.
 
-```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://www.xiachufang.com/recipe/104000000/"}'
-```
-
-If anti-bot is triggered, you will get status like `challenge_required`.
-
-### Step 2A: Resume with cookie (recommended)
-
-After solving challenge in your browser, copy request cookie and resume:
+### Import one or more recipe pages from HTML
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import/{job_id}/resume-with-cookies" \
+curl -X POST "http://127.0.0.1:8000/recipes/import/from-html" \
   -H "Content-Type: application/json" \
-  -d '{"cookie":"your_xiachufang_cookie_header"}'
-```
-
-### Step 2B: Manual HTML fallback
-
-If cookie flow still fails, submit full recipe HTML manually:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import/{job_id}/submit-html" \
-  -H "Content-Type: application/json" \
-  -d '{"html":"<html>...</html>"}'
+  -d '{
+    "recipes": [
+      {
+        "source_url": "https://www.xiachufang.com/recipe/107377415/",
+        "html": "<html>...</html>"
+      }
+    ]
+  }'
 ```
 
 Import parsing behavior:
 - Primary parser: LLM extraction (OpenAI-compatible endpoint)
 - Fallback parser: rule-based extraction if LLM parser fails
-
-### Step 3: Preview parsed recipe
-
-```bash
-curl "http://127.0.0.1:8000/recipes/import/{job_id}/preview"
-```
-
-### Step 4: Commit to recipe DB
-
-```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import/{job_id}/commit"
-```
-
-## Xiachufang Homepage Recommended Import
-
-### Trigger a batch import
-
-```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import/xiachufang/recommended" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "homepage_url": "https://www.xiachufang.com/",
-    "max_links": 30,
-    "auto_commit": true
-  }'
-```
-
-### Check run status
-
-```bash
-curl "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}"
-```
-
-### List run items
-
-```bash
-curl "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}/items"
-```
-
-### Resume run with cookies (when challenge_required)
-
-```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}/resume-with-cookies" \
-  -H "Content-Type: application/json" \
-  -d '{"cookie":"your_xiachufang_cookie_header"}'
-```
-
-### Submit homepage HTML manually (fallback)
-
-```bash
-curl -X POST "http://127.0.0.1:8000/recipes/import/xiachufang/recommended/{run_id}/submit-html" \
-  -H "Content-Type: application/json" \
-  -d '{"html":"<html>...</html>"}'
-```
+- Ingredient list parsing: batch LLM parsing per recipe, with note/optional preservation
 
 ## OpenClaw Integration Guide
 
@@ -397,7 +321,7 @@ http://127.0.0.1:8000/openapi.json
    - `PUT /recipes/{recipe_id}`
    - `DELETE /recipes/{recipe_id}`
    - `POST /recipes/search/hybrid`
-   - Import flow endpoints under `/recipes/import/*`
+   - `POST /recipes/import/from-html`
 
 ### Option B: Manual action mapping
 
@@ -418,30 +342,15 @@ If your OpenClaw instance does not support OpenAPI import, create HTTP actions m
   - URL: `http://127.0.0.1:8000/recipes/search/hybrid`
 
 - Action group: `import_xiachufang`
-  - `POST /recipes/import`
-  - `GET /recipes/import/{job_id}`
-  - `POST /recipes/import/{job_id}/resume-with-cookies`
-  - `POST /recipes/import/{job_id}/submit-html`
-  - `GET /recipes/import/{job_id}/preview`
-  - `POST /recipes/import/{job_id}/commit`
+  - `POST /recipes/import/from-html`
 
 ### OpenClaw workflow suggestion for Xiachufang
 
 Use this orchestration in OpenClaw:
 
-1. Call `POST /recipes/import` with URL.
-2. If status is `ready_to_commit`: call preview then commit.
-3. If status is `challenge_required`:
-   - Ask user to finish browser verification.
-   - Ask user to paste cookie string.
-   - Call `/resume-with-cookies`.
-4. If still not ready:
-   - Ask user to paste full page HTML.
-   - Call `/submit-html`.
-5. Call `/preview`, let user confirm.
-6. Call `/commit`.
-
-This gives stable behavior even when anti-bot checks are active.
+1. Let the App open Xiachufang inside its own WebView.
+2. After verification, let the App read final page HTML.
+3. Call `POST /recipes/import/from-html` with one or more recipe pages.
 
 ## Notes
 

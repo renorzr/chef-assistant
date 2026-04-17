@@ -264,6 +264,14 @@ class ChatMessageRequest(BaseModel):
     context: Dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
+class ChatAction(BaseModel):
+    type: str
+    query: Optional[str] = None
+    id: Optional[str] = None
+    url: Optional[str] = None
+    limit: Optional[int] = None
+
+
 class ChatCard(BaseModel):
     type: str
     id: str
@@ -276,6 +284,7 @@ class ChatMessageResponse(BaseModel):
     session_id: str
     reply_text: str
     cards: List[ChatCard]
+    action: Optional[ChatAction] = None
 
 
 class ChatHistoryMessage(BaseModel):
@@ -331,75 +340,25 @@ class HybridSearchResponse(BaseModel):
     results: List[HybridSearchResult]
 
 
-class RecipeImportCreateRequest(BaseModel):
-    url: str = Field(..., min_length=1)
-
-
-class RecipeImportStatusResponse(BaseModel):
-    job_id: int
-    source_url: str
-    status: str
-    message: Optional[str] = None
-    next_action: Optional[str] = None
-    requires_user_intervention: bool
-
-
-class RecipeImportResumeCookiesRequest(BaseModel):
-    cookie: str = Field(..., min_length=1)
-
-
-class RecipeImportSubmitHtmlRequest(BaseModel):
+class RecipeImportFromHtmlItem(BaseModel):
+    source_url: str = Field(..., min_length=1)
     html: str = Field(..., min_length=1)
 
 
-class RecipeImportPreviewResponse(BaseModel):
-    job_id: int
+class RecipeImportFromHtmlRequest(BaseModel):
+    recipes: List[RecipeImportFromHtmlItem] = Field(..., min_length=1)
+
+
+class RecipeImportFromHtmlResult(BaseModel):
+    source_url: str
     status: str
-    recipe: RecipeCreate
-
-
-class RecipeImportCommitResponse(BaseModel):
-    job_id: int
-    status: str
-    recipe: RecipeRead
-
-
-class XiachufangRecommendedImportCreateRequest(BaseModel):
-    homepage_url: str = Field(default="https://www.xiachufang.com/")
-    max_links: int = Field(default=30, ge=1, le=200)
-    auto_commit: bool = True
-
-
-class XiachufangRecommendedRunItemRead(BaseModel):
-    id: int
-    recipe_url: str
-    status: str
-    message: Optional[str] = None
-    import_job_id: Optional[int] = None
     recipe_id: Optional[int] = None
+    recipe_name: Optional[str] = None
+    message: str
 
 
-class XiachufangRecommendedRunResponse(BaseModel):
-    run_id: int
-    homepage_url: str
-    max_links: int
-    auto_commit: bool
-    status: str
-    message: Optional[str] = None
-    next_action: Optional[str] = None
-    requires_user_intervention: bool
-    discovered_count: int
-    queued_count: int
-    imported_count: int
-    failed_count: int
-    skipped_count: int
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
-
-
-class XiachufangRecommendedRunItemsResponse(BaseModel):
-    run_id: int
-    items: List[XiachufangRecommendedRunItemRead]
+class RecipeImportFromHtmlResponse(BaseModel):
+    results: List[RecipeImportFromHtmlResult]
 
 
 class EmbeddingReindexRequest(BaseModel):

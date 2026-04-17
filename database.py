@@ -94,20 +94,6 @@ def run_sqlite_migrations() -> None:
                     "ALTER TABLE recipe_steps ADD COLUMN image_url VARCHAR(1000)"
                 )
 
-        if "xiachufang_recommended_runs" in tables:
-            run_cols = {
-                row[1]
-                for row in conn.exec_driver_sql("PRAGMA table_info('xiachufang_recommended_runs')")
-            }
-            if "max_links" not in run_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE xiachufang_recommended_runs ADD COLUMN max_links INTEGER NOT NULL DEFAULT 30"
-                )
-            if "auto_commit" not in run_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE xiachufang_recommended_runs ADD COLUMN auto_commit INTEGER NOT NULL DEFAULT 1"
-                )
-
         if "meal_plans" in tables:
             meal_plan_cols = {
                 row[1]

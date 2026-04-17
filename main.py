@@ -1,7 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -19,7 +17,6 @@ from routers.admin import router as admin_router
 from routers.media import router as media_router
 from seed_data import seed_sample_data
 from services.embedding_audit_service import get_audit_config, run_audit_once
-from services.import_service import get_recommended_import_daily_config, run_recommended_import_daily_once
 from services.recipe_service import normalize_existing_ingredients
 
 app = FastAPI(title="AI Cooking Assistant MVP", version="1.0.0")
@@ -28,53 +25,6 @@ FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
 _audit_stop_event: asyncio.Event | None = None
 _audit_task: asyncio.Task | None = None
-_recommended_stop_event: asyncio.Event | None = None
-_recommended_task: asyncio.Task | None = None
-
-
-def _compute_next_daily_run(now: datetime, daily_time: str) -> datetime:
-    parts = daily_time.split(":")
-    hour = int(parts[0]) if len(parts) > 0 else 6
-    minute = int(parts[1]) if len(parts) > 1 else 0
-
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= now:
-        target = target + timedelta(days=1)
-    return target
-
-
-async def _recommended_daily_import_loop(stop_event: asyncio.Event) -> None:
-    cfg = get_recommended_import_daily_config()
-    if not cfg["enabled"]:
-        return
-
-    try:
-        tz = ZoneInfo(cfg["timezone_name"])
-    except Exception:
-        tz = ZoneInfo("UTC")
-
-    while not stop_event.is_set():
-        now = datetime.now(tz)
-        next_run = _compute_next_daily_run(now, cfg["daily_time"])
-        wait_seconds = max(1.0, (next_run - now).total_seconds())
-
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
-            return
-        except asyncio.TimeoutError:
-            pass
-
-        if stop_event.is_set():
-            return
-
-        def _run_once_sync():
-            with SessionLocal() as db:
-                run_recommended_import_daily_once(db)
-
-        try:
-            await asyncio.to_thread(_run_once_sync)
-        except Exception:
-            pass
 
 
 async def _embedding_audit_loop(stop_event: asyncio.Event) -> None:
@@ -112,17 +62,14 @@ async def on_startup():
         seed_sample_data(db)
         normalize_existing_ingredients(db)
 
-    global _audit_stop_event, _audit_task, _recommended_stop_event, _recommended_task
+    global _audit_stop_event, _audit_task
     _audit_stop_event = asyncio.Event()
     _audit_task = asyncio.create_task(_embedding_audit_loop(_audit_stop_event))
-
-    _recommended_stop_event = asyncio.Event()
-    _recommended_task = asyncio.create_task(_recommended_daily_import_loop(_recommended_stop_event))
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    global _audit_stop_event, _audit_task, _recommended_stop_event, _recommended_task
+    global _audit_stop_event, _audit_task
     if _audit_stop_event is not None:
         _audit_stop_event.set()
     if _audit_task is not None:
@@ -131,18 +78,8 @@ async def on_shutdown():
         except Exception:
             pass
 
-    if _recommended_stop_event is not None:
-        _recommended_stop_event.set()
-    if _recommended_task is not None:
-        try:
-            await _recommended_task
-        except Exception:
-            pass
-
     _audit_stop_event = None
     _audit_task = None
-    _recommended_stop_event = None
-    _recommended_task = None
 
 
 @app.get("/health")
