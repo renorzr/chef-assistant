@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getChatMessages, sendChatMessage } from "./api/chat";
+import { isNativeApp, openXiachufangImport, subscribeImportResult } from "./appBridge";
 import { addMenuItem, createMenuCategory, createMenuFromText, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "./api/menus";
 import { addMealPlanItem, cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
 import { getRecipe, listRecipes, searchRecipes, updateRecipe } from "./api/recipes";
@@ -374,6 +375,47 @@ function Home() {
   }, [sessionId]);
 
   useEffect(() => {
+    const unsubscribe = subscribeImportResult((payload) => {
+      if (payload?.status === "success") {
+        const imported = payload.results || [];
+        const cards = imported
+          .filter((item) => item.status === "imported" && item.recipe_id)
+          .slice(0, 3)
+          .map((item) => ({
+            type: "recipe",
+            id: String(item.recipe_id),
+            title: item.recipe_name,
+            subtitle: item.message,
+            image_url: item.image_url || null
+          }));
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              imported.length > 1
+                ? `已完成批量导入，成功 ${imported.filter((item) => item.status === "imported").length} 条。`
+                : imported[0]?.message || "导入完成。",
+            cards
+          }
+        ]);
+      } else if (payload?.status === "failed") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: payload.message || "导入失败。",
+            cards: []
+          }
+        ]);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     if (status === "success") {
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
@@ -395,6 +437,19 @@ function Home() {
       setSessionId(reply.session_id);
       window.localStorage.setItem("chef_chat_session_id", reply.session_id);
       setMessages((prev) => [...prev, { role: "assistant", content: reply.reply_text, cards: reply.cards || [] }]);
+
+      if (reply.action?.type === "import_xiachufang_recipe") {
+        const launched = openXiachufangImport({ mode: "recipe", url: reply.action.url });
+        if (!launched) {
+          setMessages((prev) => [...prev, { role: "assistant", content: "当前不在 App 环境中，无法直接打开导入 WebView。", cards: [] }]);
+        }
+      }
+      if (reply.action?.type === "import_xiachufang_homepage") {
+        const launched = openXiachufangImport({ mode: "homepage", url: "https://www.xiachufang.com/" });
+        if (!launched) {
+          setMessages((prev) => [...prev, { role: "assistant", content: "当前不在 App 环境中，无法直接打开导入 WebView。", cards: [] }]);
+        }
+      }
     } catch (error) {
       setMessages((prev) => [...prev, { role: "assistant", content: `对话请求失败：${error.message}` }]);
     } finally {
