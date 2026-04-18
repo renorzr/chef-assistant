@@ -12,8 +12,11 @@ export function isNativeApp() {
 
 export function openXiachufangImport(payload) {
   if (!isNativeApp()) {
+    console.log("[bridge] open_xiachufang_import unavailable", { payload, hasNativeBridge: false });
     return false;
   }
+
+  console.log("[bridge] open_xiachufang_import called", payload);
 
   window.ReactNativeWebView.postMessage(
     JSON.stringify({
@@ -39,6 +42,7 @@ export function subscribeImportResult(handler) {
   const messageHandler = (event) => {
     const payload = safeParse(event?.data);
     if (payload?.type === "import_result") {
+      console.log("[bridge] import_result received via window.message", payload.payload || {});
       handler(payload.payload || {});
     }
   };

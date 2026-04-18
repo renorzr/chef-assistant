@@ -4,7 +4,7 @@ import { getChatMessages, sendChatMessage } from "./api/chat";
 import { isNativeApp, openXiachufangImport, subscribeImportResult } from "./appBridge";
 import { addMenuItem, createMenuCategory, createMenuFromText, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "./api/menus";
 import { addMealPlanItem, cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
-import { getRecipe, listRecipes, searchRecipes, updateRecipe } from "./api/recipes";
+import { getRecipe, importRecipeFromText, listRecipes, searchRecipes, updateRecipe } from "./api/recipes";
 
 function isUsableImage(url) {
   if (!url || typeof url !== "string") return false;
@@ -292,6 +292,52 @@ function ExpiredMealPlanSheet({ open, onClose, onContinue, onComplete, onCancelP
   );
 }
 
+function RecipeCreateSheet({
+  open,
+  title,
+  placeholder,
+  value,
+  onChange,
+  onClose,
+  onSubmit,
+  submitting,
+  submitLabel,
+  error,
+  inputProps = {}
+}) {
+  const { multiline, ...restInputProps } = inputProps;
+
+  return (
+    <BottomSheet open={open} title={title} onClose={onClose}>
+      <div className="space-y-3 pb-2">
+        {multiline ? (
+          <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="min-h-40 w-full rounded-2xl bg-gray-100 p-3 outline-none"
+            {...restInputProps}
+          />
+        ) : (
+          <input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="w-full rounded-2xl bg-gray-100 p-3 outline-none"
+            {...restInputProps}
+          />
+        )}
+
+        {error ? <div className="text-sm text-red-500">{error}</div> : null}
+
+        <button onClick={onSubmit} disabled={submitting} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
+          {submitting ? "处理中" : submitLabel}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
 function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -434,18 +480,23 @@ function Home() {
         message: text,
         context: { current_page: "/" }
       });
+      console.log("[chat-ui] reply received", reply);
       setSessionId(reply.session_id);
       window.localStorage.setItem("chef_chat_session_id", reply.session_id);
       setMessages((prev) => [...prev, { role: "assistant", content: reply.reply_text, cards: reply.cards || [] }]);
 
       if (reply.action?.type === "import_xiachufang_recipe") {
+        console.log("[chat-ui] import recipe action detected", reply.action);
         const launched = openXiachufangImport({ mode: "recipe", url: reply.action.url });
+        console.log("[chat-ui] import recipe bridge result", { launched });
         if (!launched) {
           setMessages((prev) => [...prev, { role: "assistant", content: "当前不在 App 环境中，无法直接打开导入 WebView。", cards: [] }]);
         }
       }
       if (reply.action?.type === "import_xiachufang_homepage") {
+        console.log("[chat-ui] import homepage action detected", reply.action);
         const launched = openXiachufangImport({ mode: "homepage", url: "https://www.xiachufang.com/" });
+        console.log("[chat-ui] import homepage bridge result", { launched });
         if (!launched) {
           setMessages((prev) => [...prev, { role: "assistant", content: "当前不在 App 环境中，无法直接打开导入 WebView。", cards: [] }]);
         }
@@ -937,6 +988,15 @@ function RecipesList() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("loading");
   const [searching, setSearching] = useState(false);
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
+  const [importLinkOpen, setImportLinkOpen] = useState(false);
+  const [textCreateOpen, setTextCreateOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [recipeText, setRecipeText] = useState("");
+  const [importError, setImportError] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [menus, setMenus] = useState([]);
   const [menusStatus, setMenusStatus] = useState("idle");
@@ -977,6 +1037,30 @@ function RecipesList() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeImportResult((payload) => {
+      if (payload?.status !== "success") {
+        if (payload?.status === "failed") {
+          setImportSubmitting(false);
+          setImportError(payload.message || "导入失败。");
+        }
+        return;
+      }
+
+      const imported = (payload.results || []).filter((item) => item.status === "imported" && item.recipe_id);
+      setImportSubmitting(false);
+      setImportError("");
+      setImportLinkOpen(false);
+      setImportUrl("");
+      loadAll();
+      if (imported[0]?.recipe_id) {
+        navigate(`/recipes/${imported[0].recipe_id}`);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigate]);
 
   const openMenuPicker = (recipeId) => {
     setActiveRecipeId(recipeId);
@@ -1059,6 +1143,72 @@ function RecipesList() {
     }
   };
 
+  const openCreateActions = () => {
+    setCreateError("");
+    setImportError("");
+    setCreateSheetOpen(true);
+  };
+
+  const openImportLinkSheet = () => {
+    setCreateSheetOpen(false);
+    setCreateError("");
+    setImportError("");
+    setImportLinkOpen(true);
+  };
+
+  const openTextCreateSheet = () => {
+    setCreateSheetOpen(false);
+    setImportError("");
+    setCreateError("");
+    setTextCreateOpen(true);
+  };
+
+  const submitImportUrl = async () => {
+    const url = importUrl.trim();
+    if (!url) {
+      setImportError("请输入下厨房菜谱链接。");
+      return;
+    }
+    if (!/^https?:\/\/(?:www\.)?xiachufang\.com\/recipe\/\d+\/?$/i.test(url)) {
+      setImportError("只支持下厨房菜谱详情链接。");
+      return;
+    }
+    if (!isNativeApp()) {
+      setImportError("当前不在 App 环境中，无法直接打开导入 WebView。");
+      return;
+    }
+
+    setImportSubmitting(true);
+    setImportError("");
+    const launched = openXiachufangImport({ mode: "recipe", url });
+    if (!launched) {
+      setImportSubmitting(false);
+      setImportError("当前不在 App 环境中，无法直接打开导入 WebView。");
+    }
+  };
+
+  const submitRecipeText = async () => {
+    const text = recipeText.trim();
+    if (!text) {
+      setCreateError("请输入菜谱文本。");
+      return;
+    }
+
+    setCreateSubmitting(true);
+    setCreateError("");
+    try {
+      const result = await importRecipeFromText(text);
+      setTextCreateOpen(false);
+      setRecipeText("");
+      loadAll();
+      navigate(`/recipes/${result.recipe.id}`);
+    } catch (error) {
+      setCreateError(error.message || "新建失败。");
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
   if (status === "loading") return <LoadingBlock />;
   if (status === "error") return <ErrorBlock onRetry={loadAll} />;
 
@@ -1075,6 +1225,9 @@ function RecipesList() {
             if (e.key === "Enter" && !e.nativeEvent.isComposing) runSearch();
           }}
         />
+        <IconButton onClick={openCreateActions} title="新增菜谱">
+          +
+        </IconButton>
       </div>
 
       {recipes.map((recipe) => (
@@ -1098,6 +1251,51 @@ function RecipesList() {
           { label: "加入餐单", loading: mealPlanSaving, loadingLabel: "加入中", onClick: addCurrentRecipeToMealPlan },
           { label: "加入菜单", onClick: () => openMenuPicker(activeRecipeId) }
         ]}
+      />
+
+      <RecipeActionSheet
+        open={createSheetOpen}
+        title="新增菜谱"
+        onClose={() => setCreateSheetOpen(false)}
+        options={[
+          { label: "导入菜谱", onClick: openImportLinkSheet },
+          { label: "新建菜谱", onClick: openTextCreateSheet }
+        ]}
+      />
+
+      <RecipeCreateSheet
+        open={importLinkOpen}
+        title="导入菜谱"
+        placeholder="粘贴下厨房菜谱链接"
+        value={importUrl}
+        onChange={setImportUrl}
+        onClose={() => {
+          setImportLinkOpen(false);
+          setImportSubmitting(false);
+          setImportError("");
+        }}
+        onSubmit={submitImportUrl}
+        submitting={importSubmitting}
+        submitLabel="开始导入"
+        error={importError}
+        inputProps={{ autoCapitalize: "none", autoCorrect: false }}
+      />
+
+      <RecipeCreateSheet
+        open={textCreateOpen}
+        title="新建菜谱"
+        placeholder="粘贴完整菜谱文本，例如标题、食材、步骤"
+        value={recipeText}
+        onChange={setRecipeText}
+        onClose={() => {
+          setTextCreateOpen(false);
+          setCreateError("");
+        }}
+        onSubmit={submitRecipeText}
+        submitting={createSubmitting}
+        submitLabel="解析并保存"
+        error={createError}
+        inputProps={{ multiline: true }}
       />
 
       <MenuPickerSheet

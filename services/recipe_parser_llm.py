@@ -314,3 +314,93 @@ def parse_recipe_with_llm(html_text: str, source_url: str) -> dict[str, Any]:
         raise RecipeParserError("LLM parser response is not valid JSON recipe object.") from exc
 
     return _normalize_draft(draft, source_url=source_url)
+
+
+def parse_recipe_text_with_llm(recipe_text: str) -> dict[str, Any]:
+    provider = os.getenv("RECIPE_PARSER_PROVIDER", "openai_compatible").strip().lower()
+    if provider != "openai_compatible":
+        raise RecipeParserError("Unsupported RECIPE_PARSER_PROVIDER.")
+
+    base_url = os.getenv("RECIPE_PARSER_BASE_URL", "").strip()
+    api_key = os.getenv("RECIPE_PARSER_API_KEY", "").strip()
+    model = os.getenv("RECIPE_PARSER_MODEL", "").strip()
+    timeout_seconds = float(os.getenv("RECIPE_PARSER_TIMEOUT_SECONDS", "30"))
+
+    if not base_url or not api_key or not model:
+        raise RecipeParserError(
+            "Missing parser config: RECIPE_PARSER_BASE_URL / RECIPE_PARSER_API_KEY / RECIPE_PARSER_MODEL."
+        )
+
+    schema_hint = {
+        "name": "string (concise canonical dish name only)",
+        "description": "string|null",
+        "cook_time_minutes": "integer",
+        "difficulty": "easy|medium|hard",
+        "tags": ["string"],
+        "cover_image_url": "string|null",
+        "main_ingredient": "string|null",
+        "dish_type": "meat|vegetable|other",
+        "cooking_method": "string",
+        "ingredients": [
+            {"name": "string", "amount": "string|null", "unit": "string|null", "note": "string|null", "optional": "boolean", "is_main": "boolean"}
+        ],
+        "steps": [{"step_order": "integer", "instruction": "string", "image_url": "string|null"}],
+        "media": [{"media_type": "image|video", "url": "string"}],
+    }
+
+    prompt = (
+        "Extract ONE structured recipe from the given user-provided recipe text. "
+        "Return strictly valid JSON only, with keys matching this schema: "
+        f"{json.dumps(schema_hint, ensure_ascii=False)}. "
+        "If values are unknown, use null or reasonable defaults. "
+        "The `name` field must be the concise canonical dish name only. "
+        "Preserve ingredient notes like '适量', '按口味调整', '可选' in note. "
+        "If an ingredient is optional, set optional=true. "
+        "If no image URLs are present, use null for cover_image_url and steps[].image_url. "
+        "Do not include markdown fences or extra text."
+    )
+
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": "You are a precise recipe extraction engine."},
+            {"role": "user", "content": f"Recipe text:\n{recipe_text[:16000]}"},
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    req = Request(
+        url=f"{base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+
+    try:
+        with urlopen(req, timeout=timeout_seconds) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+    except HTTPError as exc:
+        err_body = exc.read().decode("utf-8", errors="ignore")
+        raise RecipeParserError(f"LLM parser HTTP error {exc.code}: {err_body[:300]}") from exc
+    except URLError as exc:
+        raise RecipeParserError(f"LLM parser network error: {exc}") from exc
+    except Exception as exc:
+        raise RecipeParserError(f"LLM parser request failed: {exc}") from exc
+
+    try:
+        parsed = json.loads(body)
+        content = parsed["choices"][0]["message"]["content"]
+        draft = json.loads(content)
+        if not isinstance(draft, dict):
+            raise ValueError("content is not object")
+    except Exception as exc:
+        raise RecipeParserError("LLM parser response is not valid JSON recipe object.") from exc
+
+    normalized = _normalize_draft(draft, source_url=None)
+    normalized["source_type"] = "user"
+    normalized["source_url"] = None
+    return normalized

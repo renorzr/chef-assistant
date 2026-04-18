@@ -39,7 +39,9 @@ export default function App() {
 
   const handleMainMessage = (event) => {
     try {
+      console.log('[rn.bridge] main message raw', event.nativeEvent.data);
       const message = JSON.parse(event.nativeEvent.data);
+      console.log('[rn.bridge] main message parsed', message);
       if (message?.type === 'open_xiachufang_import') {
         const payload = message.payload || {};
         setImportSession({
@@ -52,6 +54,7 @@ export default function App() {
         });
         setImportStatus('waiting');
         setImportMessage(payload.mode === 'homepage' ? '请在当前首页完成验证，然后点击“开始导入首页推荐菜”。' : '请在当前页面完成人机验证，然后点击“提交当前页面”。');
+        console.log('[rn.import] session opened', payload);
       }
     } catch {
       // ignore malformed bridge messages
@@ -62,6 +65,7 @@ export default function App() {
     if (!importWebViewRef.current) return;
     setImportStatus('capturing');
     setImportMessage('正在提取页面内容...');
+    console.log('[rn.import] submit current page', importSession);
     importWebViewRef.current.injectJavaScript(`
       (function() {
         const payload = {
@@ -78,12 +82,14 @@ export default function App() {
   const importRecipesFromHtml = async (recipes) => {
     setImportStatus('submitting');
     setImportMessage('正在提交后端导入...');
+    console.log('[rn.import] submit from-html', { count: recipes.length, urls: recipes.map((r) => r.source_url) });
     const response = await fetch(`${API_BASE_URL}/recipes/import/from-html`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ recipes })
     });
     const payload = await response.json();
+    console.log('[rn.import] from-html response', payload);
     if (!response.ok) {
       throw new Error(payload.detail || '导入失败');
     }
@@ -92,7 +98,9 @@ export default function App() {
 
   const handleImportMessage = async (event) => {
     try {
+      console.log('[rn.import] import webview raw message', event.nativeEvent.data);
       const message = JSON.parse(event.nativeEvent.data);
+      console.log('[rn.import] import webview parsed message', message?.type, message?.url);
       if (message?.type !== 'page_html') return;
 
       if (importSession?.mode === 'recipe') {
@@ -156,12 +164,14 @@ export default function App() {
   };
 
   const closeImportModal = () => {
+    console.log('[rn.import] close import modal');
     setImportSession(null);
     setImportStatus('idle');
     setImportMessage('');
   };
 
   const handleImportLoadEnd = () => {
+    console.log('[rn.import] import webview load end', importSession?.phase, importSession?.currentUrl);
     if (!importSession || importSession.mode !== 'homepage') return;
     if (importSession.phase !== 'collecting_recipe_pages') return;
 

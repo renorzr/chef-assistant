@@ -361,6 +361,15 @@ class RecipeImportFromHtmlResponse(BaseModel):
     results: List[RecipeImportFromHtmlResult]
 
 
+class RecipeImportFromTextRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
+class RecipeImportFromTextResponse(BaseModel):
+    recipe: RecipeRead
+    message: str
+
+
 class EmbeddingReindexRequest(BaseModel):
     only_missing: bool = False
 

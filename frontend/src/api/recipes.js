@@ -27,3 +27,10 @@ export function updateRecipe(id, payload) {
     body: JSON.stringify(payload)
   });
 }
+
+export function importRecipeFromText(text) {
+  return apiFetch("/recipes/import/from-text", {
+    method: "POST",
+    body: JSON.stringify({ text })
+  });
+}

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import time
@@ -24,6 +25,8 @@ from services.menu_template_service import list_menus
 from services.recipe_service import get_recipe_by_id, search_recipes_hybrid
 
 load_env_file()
+
+logger = logging.getLogger(__name__)
 
 
 class ChatServiceError(Exception):
@@ -195,6 +198,13 @@ def _call_chat_llm(payload: ChatMessageRequest) -> dict[str, Any]:
         ],
     }
 
+    logger.info(
+        "chat.llm.request session_id=%s context=%s prompt=%s",
+        payload.session_id,
+        json.dumps(payload.context, ensure_ascii=False),
+        _build_llm_prompt(payload),
+    )
+
     body = None
     for attempt in range(2):
         req = Request(
@@ -228,15 +238,19 @@ def _call_chat_llm(payload: ChatMessageRequest) -> dict[str, Any]:
     try:
         parsed = json.loads(body)
         content = parsed["choices"][0]["message"]["content"]
+        logger.info("chat.llm.raw_response session_id=%s content=%s", payload.session_id, content)
     except Exception as exc:
         raise ChatServiceError("Chat model response parse failed.") from exc
 
     try:
         data = json.loads(content)
         if isinstance(data, dict):
+            logger.info("chat.llm.parsed_response session_id=%s parsed=%s", payload.session_id, json.dumps(data, ensure_ascii=False))
             return data
     except Exception:
         pass
+
+    logger.warning("chat.llm.non_json_response session_id=%s content=%s", payload.session_id, content)
 
     return {"reply_text": content.strip() or "我暂时无法生成回复。", "action": {"type": "none"}}
 
@@ -373,6 +387,12 @@ def list_recent_chat_messages(db: Session, session_id: str, limit: int = 20) -> 
 
 def send_chat_message_via_openclaw(db: Session, payload: ChatMessageRequest) -> ChatMessageResponse:
     session_id = payload.session_id or f"chef-chat-{uuid.uuid4().hex[:12]}"
+    logger.info(
+        "chat.request.received session_id=%s message=%s context=%s",
+        session_id,
+        payload.message,
+        json.dumps(payload.context, ensure_ascii=False),
+    )
     session = _get_or_create_session(db, session_id)
     history_messages = _recent_history_messages(db, session_id, limit=10)
     _save_message(db, session, "user", payload.message)
@@ -460,6 +480,14 @@ def send_chat_message_via_openclaw(db: Session, payload: ChatMessageRequest) -> 
             reply_text = override_reply
     except Exception:
         cards = []
+
+    logger.info(
+        "chat.response.final session_id=%s action=%s cards_count=%s reply_text=%s",
+        session_id,
+        json.dumps(action, ensure_ascii=False),
+        len(cards),
+        reply_text,
+    )
 
     _save_message(db, session, "assistant", reply_text, cards)
     db.commit()

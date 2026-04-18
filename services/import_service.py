@@ -13,9 +13,11 @@ from schemas import (
     RecipeImportFromHtmlRequest,
     RecipeImportFromHtmlResponse,
     RecipeImportFromHtmlResult,
+    RecipeImportFromTextRequest,
+    RecipeImportFromTextResponse,
 )
 from services.ingredient_service import parse_ingredient_lines_with_llm
-from services.recipe_parser_llm import parse_recipe_with_llm, RecipeParserError
+from services.recipe_parser_llm import parse_recipe_text_with_llm, parse_recipe_with_llm, RecipeParserError
 from services.recipe_service import create_recipe
 
 
@@ -480,3 +482,20 @@ def import_recipes_from_html(db: Session, payload: RecipeImportFromHtmlRequest) 
             db.rollback()
             results.append(RecipeImportFromHtmlResult(source_url=normalized_url, status="failed", message=f"Import failed: {exc}"))
     return RecipeImportFromHtmlResponse(results=results)
+
+
+def import_recipe_from_text(db: Session, payload: RecipeImportFromTextRequest) -> RecipeImportFromTextResponse:
+    text = payload.text.strip()
+    if not text:
+        raise ValueError("Recipe text cannot be empty.")
+
+    try:
+        draft = parse_recipe_text_with_llm(text)
+        recipe = create_recipe(db, RecipeCreate(**draft))
+        return RecipeImportFromTextResponse(recipe=recipe, message="Recipe created from text.")
+    except RecipeParserError as exc:
+        db.rollback()
+        raise ValueError(f"Could not parse recipe text: {exc}") from exc
+    except Exception:
+        db.rollback()
+        raise
