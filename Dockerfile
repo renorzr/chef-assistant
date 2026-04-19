@@ -13,6 +13,7 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

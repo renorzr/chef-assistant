@@ -3,8 +3,8 @@ import { ActivityIndicator, Modal, Pressable, SafeAreaView, StyleSheet, Text, Te
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 
-const APP_WEB_URL = 'http://10.0.2.2:5173';
-const API_BASE_URL = 'http://10.0.2.2:8000';
+const APP_WEB_URL = 'http://47.96.182.121:8000';
+const API_BASE_URL = 'http://47.96.182.121:8000';
 
 function extractRecipeLinks(html) {
   const matches = Array.from(html.matchAll(/https?:\/\/(?:www\.)?xiachufang\.com\/recipe\/\d+\/?/g));
