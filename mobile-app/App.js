@@ -27,7 +27,7 @@ function buildProbeScript() {
       const html = document.documentElement.outerHTML;
       const title = document.title || '';
       const url = location.href;
-      const combined = [url, title, text, html.slice(0, 4000)].join('\n').toLowerCase();
+      const combined = [url, title, text, html.slice(0, 4000)].join(' ').toLowerCase();
       const isChallenge = [
         '人机验证',
         '安全验证',
@@ -68,6 +68,7 @@ function buildPageHtmlScript() {
 export default function App() {
   const mainWebViewRef = useRef(null);
   const importWebViewRef = useRef(null);
+  const recipeProbeTimeoutRef = useRef(null);
 
   const [mainUrl, setMainUrl] = useState(APP_WEB_URL);
   const [importSession, setImportSession] = useState(null);
@@ -115,6 +116,26 @@ export default function App() {
     importWebViewRef.current.injectJavaScript(buildProbeScript());
   };
 
+  const clearRecipeProbeTimeout = () => {
+    if (recipeProbeTimeoutRef.current) {
+      clearTimeout(recipeProbeTimeoutRef.current);
+      recipeProbeTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleRecipeProbeTimeout = () => {
+    clearRecipeProbeTimeout();
+    recipeProbeTimeoutRef.current = setTimeout(() => {
+      setImportSession((prev) => {
+        if (!prev || prev.mode !== 'recipe' || prev.phase !== 'recipe_checking') return prev;
+        console.log('[rn.import] recipe probe timeout, falling back to visible challenge view');
+        return { ...prev, phase: 'recipe_challenge' };
+      });
+      setImportStatus('waiting');
+      setImportMessage('请完成人机验证，完成后将自动导入。');
+    }, 8000);
+  };
+
   const submitCurrentImportPage = () => {
     if (!importWebViewRef.current) return;
     setImportStatus('capturing');
@@ -147,6 +168,8 @@ export default function App() {
       console.log('[rn.import] import webview parsed message', message?.type, message?.url);
 
       if (message?.type === 'page_probe' && importSession?.mode === 'recipe') {
+        clearRecipeProbeTimeout();
+
         if (message.isChallenge) {
           setImportSession((prev) => (prev ? { ...prev, currentUrl: message.url, phase: 'recipe_challenge' } : prev));
           setImportStatus('waiting');
@@ -225,6 +248,7 @@ export default function App() {
 
   const closeImportModal = () => {
     console.log('[rn.import] close import modal');
+    clearRecipeProbeTimeout();
     setImportSession(null);
     setImportStatus('idle');
     setImportMessage('');
@@ -233,6 +257,10 @@ export default function App() {
   const handleImportLoadEnd = () => {
     console.log('[rn.import] import webview load end', importSession?.phase, importSession?.currentUrl);
     if (importSession?.mode === 'recipe' && (importSession.phase === 'recipe_checking' || importSession.phase === 'recipe_challenge')) {
+      if (importSession.phase === 'recipe_checking') {
+        scheduleRecipeProbeTimeout();
+      }
+
       setTimeout(() => {
         probeCurrentImportPage();
       }, 800);
