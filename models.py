@@ -26,7 +26,7 @@ class Recipe(Base):
     tags = Column(JSON, nullable=False, default=list)
 
     source_type = Column(String(50), nullable=False, default="user")
-    source_url = Column(String(1000), nullable=True)
+    source_url = Column(String(1000), nullable=True, unique=True, index=True)
     cover_image_url = Column(String(1000), nullable=True)
 
     main_ingredient = Column(String(255), nullable=True)

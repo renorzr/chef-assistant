@@ -23,6 +23,14 @@ function toDisplayImageUrl(url) {
   return `/api/media/proxy?url=${encodeURIComponent(url)}`;
 }
 
+function normalizeXiachufangRecipeUrl(url) {
+  const match = url.trim().match(/^https?:\/\/(?:www\.)?xiachufang\.com\/recipe\/(\d+)(?:\/|[?#].*)*$/i);
+  if (!match) {
+    return null;
+  }
+  return `https://www.xiachufang.com/recipe/${match[1]}/`;
+}
+
 function Spinner() {
   return <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-black" />;
 }
@@ -1169,7 +1177,8 @@ function RecipesList() {
       setImportError("请输入下厨房菜谱链接。");
       return;
     }
-    if (!/^https?:\/\/(?:www\.)?xiachufang\.com\/recipe\/\d+\/?$/i.test(url)) {
+    const normalizedUrl = normalizeXiachufangRecipeUrl(url);
+    if (!normalizedUrl) {
       setImportError("只支持下厨房菜谱详情链接。");
       return;
     }
@@ -1180,7 +1189,7 @@ function RecipesList() {
 
     setImportSubmitting(true);
     setImportError("");
-    const launched = openXiachufangImport({ mode: "recipe", url });
+    const launched = openXiachufangImport({ mode: "recipe", url: normalizedUrl });
     if (!launched) {
       setImportSubmitting(false);
       setImportError("当前不在 App 环境中，无法直接打开导入 WebView。");

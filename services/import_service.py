@@ -4,6 +4,7 @@ from html import unescape
 from typing import Any
 from urllib.parse import urlparse
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -478,6 +479,9 @@ def import_recipes_from_html(db: Session, payload: RecipeImportFromHtmlRequest) 
                     message=f"Imported successfully ({parser_mode}).",
                 )
             )
+        except IntegrityError:
+            db.rollback()
+            results.append(RecipeImportFromHtmlResult(source_url=normalized_url, status="skipped", message="Recipe already imported by source URL."))
         except Exception as exc:
             db.rollback()
             results.append(RecipeImportFromHtmlResult(source_url=normalized_url, status="failed", message=f"Import failed: {exc}"))
