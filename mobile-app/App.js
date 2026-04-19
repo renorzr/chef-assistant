@@ -20,6 +20,51 @@ function extractRecipeLinks(html) {
   return links;
 }
 
+function buildProbeScript() {
+  return `
+    (function() {
+      const text = (document.body?.innerText || '').slice(0, 4000);
+      const html = document.documentElement.outerHTML;
+      const title = document.title || '';
+      const url = location.href;
+      const combined = [url, title, text, html.slice(0, 4000)].join('\n').toLowerCase();
+      const isChallenge = [
+        '人机验证',
+        '安全验证',
+        '验证后继续',
+        'captcha',
+        'challenge',
+        'verify',
+        '验证码',
+        '滑块'
+      ].some((keyword) => combined.includes(keyword));
+
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'page_probe',
+        url,
+        html,
+        title,
+        isChallenge
+      }));
+    })();
+    true;
+  `;
+}
+
+function buildPageHtmlScript() {
+  return `
+    (function() {
+      const payload = {
+        type: 'page_html',
+        url: location.href,
+        html: document.documentElement.outerHTML
+      };
+      window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+    })();
+    true;
+  `;
+}
+
 export default function App() {
   const mainWebViewRef = useRef(null);
   const importWebViewRef = useRef(null);
@@ -31,6 +76,9 @@ export default function App() {
   const [manualUrl, setManualUrl] = useState(APP_WEB_URL);
 
   const importPageUrl = useMemo(() => importSession?.currentUrl || importSession?.url || null, [importSession]);
+  const isRecipeLoadingOverlayVisible = !!importSession && importSession.mode === 'recipe' && (importSession.phase === 'recipe_checking' || importSession.phase === 'recipe_importing');
+  const isRecipeChallengeVisible = !!importSession && importSession.mode === 'recipe' && importSession.phase === 'recipe_challenge';
+  const isHomepageVisible = !!importSession && importSession.mode === 'homepage';
 
   const sendImportResultToWeb = (payload) => {
     const script = `window.dispatchEvent(new CustomEvent('native-import-result', { detail: ${JSON.stringify(payload)} })); true;`;
@@ -48,12 +96,12 @@ export default function App() {
           mode: payload.mode,
           url: payload.url || 'https://www.xiachufang.com/',
           currentUrl: payload.url || 'https://www.xiachufang.com/',
-          phase: payload.mode === 'homepage' ? 'homepage_ready' : 'recipe_ready',
+          phase: payload.mode === 'homepage' ? 'homepage_ready' : 'recipe_checking',
           queue: [],
           collectedRecipes: []
         });
-        setImportStatus('waiting');
-        setImportMessage(payload.mode === 'homepage' ? '请在当前首页完成验证，然后点击“开始导入首页推荐菜”。' : '请在当前页面完成人机验证，然后点击“提交当前页面”。');
+        setImportStatus(payload.mode === 'homepage' ? 'waiting' : 'capturing');
+        setImportMessage(payload.mode === 'homepage' ? '请在当前首页完成验证，然后点击“开始导入首页推荐菜”。' : '正在导入...');
         console.log('[rn.import] session opened', payload);
       }
     } catch {
@@ -61,22 +109,18 @@ export default function App() {
     }
   };
 
+  const probeCurrentImportPage = () => {
+    if (!importWebViewRef.current) return;
+    console.log('[rn.import] probe current page', importSession);
+    importWebViewRef.current.injectJavaScript(buildProbeScript());
+  };
+
   const submitCurrentImportPage = () => {
     if (!importWebViewRef.current) return;
     setImportStatus('capturing');
     setImportMessage('正在提取页面内容...');
     console.log('[rn.import] submit current page', importSession);
-    importWebViewRef.current.injectJavaScript(`
-      (function() {
-        const payload = {
-          type: 'page_html',
-          url: location.href,
-          html: document.documentElement.outerHTML
-        };
-        window.ReactNativeWebView.postMessage(JSON.stringify(payload));
-      })();
-      true;
-    `);
+    importWebViewRef.current.injectJavaScript(buildPageHtmlScript());
   };
 
   const importRecipesFromHtml = async (recipes) => {
@@ -101,6 +145,22 @@ export default function App() {
       console.log('[rn.import] import webview raw message', event.nativeEvent.data);
       const message = JSON.parse(event.nativeEvent.data);
       console.log('[rn.import] import webview parsed message', message?.type, message?.url);
+
+      if (message?.type === 'page_probe' && importSession?.mode === 'recipe') {
+        if (message.isChallenge) {
+          setImportSession((prev) => (prev ? { ...prev, currentUrl: message.url, phase: 'recipe_challenge' } : prev));
+          setImportStatus('waiting');
+          setImportMessage('请完成人机验证，完成后将自动导入。');
+          return;
+        }
+
+        setImportSession((prev) => (prev ? { ...prev, currentUrl: message.url, phase: 'recipe_importing' } : prev));
+        setImportStatus('capturing');
+        setImportMessage('正在提取页面内容...');
+        importWebViewRef.current?.injectJavaScript(buildPageHtmlScript());
+        return;
+      }
+
       if (message?.type !== 'page_html') return;
 
       if (importSession?.mode === 'recipe') {
@@ -172,6 +232,13 @@ export default function App() {
 
   const handleImportLoadEnd = () => {
     console.log('[rn.import] import webview load end', importSession?.phase, importSession?.currentUrl);
+    if (importSession?.mode === 'recipe' && (importSession.phase === 'recipe_checking' || importSession.phase === 'recipe_challenge')) {
+      setTimeout(() => {
+        probeCurrentImportPage();
+      }, 800);
+      return;
+    }
+
     if (!importSession || importSession.mode !== 'homepage') return;
     if (importSession.phase !== 'collecting_recipe_pages') return;
 
@@ -200,35 +267,58 @@ export default function App() {
         originWhitelist={['*']}
       />
 
-      <Modal visible={!!importSession} animationType="slide" onRequestClose={closeImportModal}>
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Pressable onPress={closeImportModal} style={styles.headerButton}>
-              <Text>关闭</Text>
-            </Pressable>
-            <Text style={styles.modalTitle}>{importSession?.mode === 'homepage' ? '导入下厨房首页' : '导入下厨房菜谱'}</Text>
-            <Pressable onPress={submitCurrentImportPage} style={styles.headerButton}>
-              <Text>{importSession?.mode === 'homepage' && importSession?.phase === 'homepage_ready' ? '开始导入首页推荐菜' : '提交当前页面'}</Text>
-            </Pressable>
-          </View>
+      <Modal
+        visible={!!importSession}
+        animationType={isRecipeLoadingOverlayVisible ? 'fade' : 'slide'}
+        transparent={isRecipeLoadingOverlayVisible}
+        onRequestClose={closeImportModal}
+      >
+        <SafeAreaView style={isRecipeLoadingOverlayVisible ? styles.loadingModalContainer : styles.modalContainer}>
+          {isRecipeLoadingOverlayVisible ? (
+            <View style={styles.loadingOverlay}>
+              <View style={styles.loadingCard}>
+                <ActivityIndicator size="large" color="#111827" />
+                <Text style={styles.loadingTitle}>正在导入...</Text>
+                <Text style={styles.loadingSubtitle}>{importMessage}</Text>
+              </View>
+            </View>
+          ) : null}
 
-          <View style={styles.statusBar}>
-            {importStatus === 'submitting' || importStatus === 'capturing' ? <ActivityIndicator size="small" color="#111827" /> : null}
-            <Text style={styles.statusText}>{importMessage}</Text>
-          </View>
+          {(isRecipeChallengeVisible || isHomepageVisible) ? (
+            <>
+              <View style={styles.modalHeader}>
+                <Pressable onPress={closeImportModal} style={styles.headerButton}>
+                  <Text>关闭</Text>
+                </Pressable>
+                <Text style={styles.modalTitle}>{importSession?.mode === 'homepage' ? '导入下厨房首页' : '导入下厨房菜谱'}</Text>
+                {isHomepageVisible ? (
+                  <Pressable onPress={submitCurrentImportPage} style={styles.headerButton}>
+                    <Text>{importSession?.phase === 'homepage_ready' ? '开始导入首页推荐菜' : '提交当前页面'}</Text>
+                  </Pressable>
+                ) : <View style={styles.headerSpacer} />}
+              </View>
+
+              <View style={styles.statusBar}>
+                {importStatus === 'submitting' || importStatus === 'capturing' ? <ActivityIndicator size="small" color="#111827" /> : null}
+                <Text style={styles.statusText}>{importMessage}</Text>
+              </View>
+            </>
+          ) : null}
 
           {importPageUrl ? (
-            <WebView
-              ref={importWebViewRef}
-              source={{ uri: importPageUrl }}
-              onMessage={handleImportMessage}
-              onLoadEnd={handleImportLoadEnd}
-              javaScriptEnabled
-              domStorageEnabled
-              sharedCookiesEnabled
-              thirdPartyCookiesEnabled
-              originWhitelist={['*']}
-            />
+            <View style={isRecipeChallengeVisible || isHomepageVisible ? styles.webViewContainer : styles.hiddenWebViewContainer} pointerEvents={isRecipeChallengeVisible || isHomepageVisible ? 'auto' : 'none'}>
+              <WebView
+                ref={importWebViewRef}
+                source={{ uri: importPageUrl }}
+                onMessage={handleImportMessage}
+                onLoadEnd={handleImportLoadEnd}
+                javaScriptEnabled
+                domStorageEnabled
+                sharedCookiesEnabled
+                thirdPartyCookiesEnabled
+                originWhitelist={['*']}
+              />
+            </View>
           ) : null}
         </SafeAreaView>
       </Modal>
@@ -272,6 +362,42 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff'
   },
+  loadingModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.2)'
+  },
+  loadingOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24
+  },
+  loadingCard: {
+    width: '100%',
+    maxWidth: 280,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8
+  },
+  loadingTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827'
+  },
+  loadingSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#4b5563',
+    textAlign: 'center'
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -291,6 +417,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f3f4f6',
     borderRadius: 10
   },
+  headerSpacer: {
+    width: 52
+  },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -303,5 +432,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#4b5563',
     flex: 1
+  },
+  webViewContainer: {
+    flex: 1
+  },
+  hiddenWebViewContainer: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+    left: -9999,
+    top: -9999
   }
 });
