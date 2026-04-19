@@ -4,7 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from schemas import MealPlanAddItemResponse, MealPlanItemCreateRequest, MealPlanRead, MealPlanSummaryRead, MealPlanUpdateRequest
+from schemas import (
+    MealPlanAddItemResponse,
+    MealPlanIngredientSummaryResponse,
+    MealPlanItemCreateRequest,
+    MealPlanRead,
+    MealPlanSummaryRead,
+    MealPlanUpdateRequest,
+)
 from services.meal_plan_service import (
     add_recipe_to_current_meal_plan,
     complete_meal_plan,
@@ -13,6 +20,7 @@ from services.meal_plan_service import (
     delete_meal_plan,
     ensure_current_meal_plan,
     get_current_meal_plan,
+    get_meal_plan_ingredients,
     get_meal_plan,
     list_recent_meal_plans,
     remove_meal_plan_item,
@@ -50,6 +58,14 @@ def list_recent_meal_plans_endpoint(limit: int = 5, db: Session = Depends(get_db
 def get_meal_plan_endpoint(meal_plan_id: int, db: Session = Depends(get_db)):
     try:
         return get_meal_plan(db, meal_plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/meal-plans/{meal_plan_id}/ingredients", response_model=MealPlanIngredientSummaryResponse)
+def get_meal_plan_ingredients_endpoint(meal_plan_id: int, db: Session = Depends(get_db)):
+    try:
+        return get_meal_plan_ingredients(db, meal_plan_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

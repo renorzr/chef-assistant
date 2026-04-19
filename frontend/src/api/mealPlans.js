@@ -23,6 +23,10 @@ export function getMealPlan(id) {
   return apiFetch(`/meal-plans/${id}`);
 }
 
+export function getMealPlanIngredients(id) {
+  return apiFetch(`/meal-plans/${id}/ingredients`);
+}
+
 export function updateMealPlan(id, payload) {
   return apiFetch(`/meal-plans/${id}`, {
     method: "PUT",

@@ -266,6 +266,33 @@ class MealPlanAddItemResponse(BaseModel):
     meal_plan: MealPlanRead
 
 
+class MealPlanIngredientUsageRead(BaseModel):
+    recipe_id: int
+    recipe_name: str
+    amount: Optional[str] = None
+    unit: Optional[str] = None
+    note: Optional[str] = None
+    optional: bool = False
+    is_main: bool = False
+
+
+class MealPlanIngredientSummaryRead(BaseModel):
+    ingredient_id: int
+    name: str
+    total_amount: Optional[str] = None
+    total_unit: Optional[str] = None
+    mixed_units: bool = False
+    optional: bool = False
+    is_main: bool = False
+    recipe_count: int = 0
+    usages: List[MealPlanIngredientUsageRead] = Field(default_factory=list)
+
+
+class MealPlanIngredientSummaryResponse(BaseModel):
+    meal_plan_id: int
+    items: List[MealPlanIngredientSummaryRead] = Field(default_factory=list)
+
+
 
 class ChatMessageRequest(BaseModel):
     session_id: Optional[str] = None

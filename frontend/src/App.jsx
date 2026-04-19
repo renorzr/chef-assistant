@@ -3,7 +3,7 @@ import { Route, Routes, useLocation, useNavigate, useParams } from "react-router
 import { getChatMessages, sendChatMessage } from "./api/chat";
 import { isNativeApp, openXiachufangImport, subscribeImportResult } from "./appBridge";
 import { addMenuItem, createMenuCategory, createMenuFromText, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "./api/menus";
-import { addMealPlanItem, cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
+import { addMealPlanItem, cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, getMealPlanIngredients, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
 import { getRecipe, importRecipeFromText, listRecipes, searchRecipes, updateRecipe } from "./api/recipes";
 
 function isUsableImage(url) {
@@ -1623,6 +1623,11 @@ function Plan() {
   const [resumingId, setResumingId] = useState(null);
   const [copyingId, setCopyingId] = useState(null);
   const [renaming, setRenaming] = useState(false);
+  const [ingredientSummaryOpen, setIngredientSummaryOpen] = useState(false);
+  const [ingredientSummaryStatus, setIngredientSummaryStatus] = useState("idle");
+  const [ingredientSummary, setIngredientSummary] = useState([]);
+  const [ingredientSummaryError, setIngredientSummaryError] = useState("");
+  const [expandedIngredients, setExpandedIngredients] = useState({});
   const listBottomRef = useRef(null);
 
   const loadMealPlans = async () => {
@@ -1632,6 +1637,11 @@ function Plan() {
       setCurrentMealPlan(current);
       setMealPlans(recent);
       setView(current ? "detail" : "list");
+      setIngredientSummaryOpen(false);
+      setIngredientSummaryStatus("idle");
+      setIngredientSummary([]);
+      setIngredientSummaryError("");
+      setExpandedIngredients({});
       setStatus("success");
     } catch {
       setStatus("error");
@@ -1647,6 +1657,14 @@ function Plan() {
       listBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [mealPlans, view, status]);
+
+  useEffect(() => {
+    setIngredientSummaryOpen(false);
+    setIngredientSummaryStatus("idle");
+    setIngredientSummary([]);
+    setIngredientSummaryError("");
+    setExpandedIngredients({});
+  }, [currentMealPlan?.id]);
 
   const removeFromMealPlan = async (itemId) => {
     if (!currentMealPlan) return;
@@ -1738,6 +1756,35 @@ function Plan() {
     }
   };
 
+  const loadIngredientSummary = async (mealPlanId) => {
+    setIngredientSummaryStatus("loading");
+    setIngredientSummaryError("");
+    try {
+      const result = await getMealPlanIngredients(mealPlanId);
+      setIngredientSummary(result.items || []);
+      setIngredientSummaryStatus("success");
+    } catch (error) {
+      setIngredientSummaryError(error.message || "加载失败");
+      setIngredientSummaryStatus("error");
+    }
+  };
+
+  const toggleIngredientSummary = async () => {
+    if (!currentMealPlan) return;
+    if (ingredientSummaryOpen) {
+      setIngredientSummaryOpen(false);
+      return;
+    }
+    setIngredientSummaryOpen(true);
+    if (ingredientSummaryStatus === "idle") {
+      await loadIngredientSummary(currentMealPlan.id);
+    }
+  };
+
+  const toggleIngredientDetail = (ingredientId) => {
+    setExpandedIngredients((prev) => ({ ...prev, [ingredientId]: !prev[ingredientId] }));
+  };
+
   if (status === "loading") return <LoadingBlock />;
   if (status === "error") return <ErrorBlock onRetry={loadMealPlans} />;
 
@@ -1779,6 +1826,68 @@ function Plan() {
                   }
                 />
               ))}
+
+              <div className="mt-4 rounded-2xl bg-white p-3 shadow">
+                <button onClick={toggleIngredientSummary} className="w-full rounded-xl bg-gray-100 p-3 text-sm font-medium">
+                  {ingredientSummaryOpen ? "收起食材汇总" : "食材汇总"}
+                </button>
+
+                {ingredientSummaryOpen ? (
+                  <div className="mt-3 space-y-2">
+                    {ingredientSummaryStatus === "loading" ? <div className="text-sm text-gray-500">加载中...</div> : null}
+                    {ingredientSummaryStatus === "error" ? (
+                      <div className="space-y-2">
+                        <div className="text-sm text-red-500">{ingredientSummaryError || "加载失败"}</div>
+                        <button onClick={() => loadIngredientSummary(currentMealPlan.id)} className="rounded-xl bg-gray-100 px-3 py-2 text-sm">
+                          重试
+                        </button>
+                      </div>
+                    ) : null}
+                    {ingredientSummaryStatus === "success" && ingredientSummary.length === 0 ? (
+                      <div className="text-sm text-gray-500">当前餐单还没有可汇总的食材。</div>
+                    ) : null}
+                    {ingredientSummaryStatus === "success"
+                      ? ingredientSummary.map((ingredient) => {
+                          const expanded = !!expandedIngredients[ingredient.ingredient_id];
+                          return (
+                            <div key={ingredient.ingredient_id} className="rounded-xl bg-gray-50 p-3">
+                              <button onClick={() => toggleIngredientDetail(ingredient.ingredient_id)} className="flex w-full items-center justify-between gap-3 text-left">
+                                <div>
+                                  <div className="font-medium text-gray-900">
+                                    {ingredient.name}
+                                    {ingredient.optional ? <span className="ml-2 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">可选</span> : null}
+                                  </div>
+                                  <div className="mt-1 text-sm text-gray-500">
+                                    {ingredient.total_amount && ingredient.total_unit ? `合计 ${ingredient.total_amount}${ingredient.total_unit}` : "查看明细"}
+                                    {` · ${ingredient.recipe_count}道菜`}
+                                  </div>
+                                </div>
+                                <div className="text-sm text-gray-400">{expanded ? "收起" : "展开"}</div>
+                              </button>
+
+                              {expanded ? (
+                                <div className="mt-3 space-y-2 border-t border-gray-200 pt-3">
+                                  {ingredient.usages.map((usage, index) => {
+                                    const quantity = [usage.amount, usage.unit].filter(Boolean).join(usage.amount && usage.unit ? "" : "");
+                                    return (
+                                      <div key={`${usage.recipe_id}-${index}`} className="flex items-start justify-between gap-3 text-sm">
+                                        <div className="font-medium text-gray-700">{usage.recipe_name}</div>
+                                        <div className="text-right text-gray-500">
+                                          <div>{quantity || "未标注用量"}</div>
+                                          {usage.note ? <div>{usage.note}</div> : null}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
           )}
 

@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from models import MealPlan, MealPlanItem, Recipe
+from models import MealPlan, MealPlanItem, Recipe, RecipeIngredient
 from schemas import (
     MealPlanAddItemResponse,
+    MealPlanIngredientSummaryRead,
+    MealPlanIngredientSummaryResponse,
+    MealPlanIngredientUsageRead,
     MealPlanItemCreateRequest,
     MealPlanItemRead,
     MealPlanRead,
@@ -72,6 +76,43 @@ def _load_meal_plan(db: Session, meal_plan_id: int) -> MealPlan | None:
     ).scalar_one_or_none()
 
 
+def _load_meal_plan_with_ingredients(db: Session, meal_plan_id: int) -> MealPlan | None:
+    return db.execute(
+        select(MealPlan)
+        .where(MealPlan.id == meal_plan_id)
+        .options(
+            selectinload(MealPlan.items)
+            .selectinload(MealPlanItem.recipe)
+            .selectinload(Recipe.recipe_ingredients)
+            .selectinload(RecipeIngredient.ingredient)
+        )
+    ).scalar_one_or_none()
+
+
+def _parse_numeric_amount(value: str | None) -> Fraction | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    if any(token in text for token in ["适量", "少许", "少量", "若干", "适当"]):
+        return None
+    if any(token in text for token in ["~", "～", "-", "至"]):
+        return None
+    compact = text.replace(" ", "")
+    try:
+        return Fraction(compact)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _format_fraction_amount(value: Fraction) -> str:
+    if value.denominator == 1:
+        return str(value.numerator)
+
+    decimal = float(value)
+    formatted = f"{decimal:.2f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
+
 def _get_current_meal_plan_model(db: Session) -> MealPlan | None:
     return db.execute(
         select(MealPlan)
@@ -121,6 +162,105 @@ def get_meal_plan(db: Session, meal_plan_id: int) -> MealPlanRead:
     if not meal_plan:
         raise ValueError("Meal plan not found.")
     return _meal_plan_to_read(meal_plan)
+
+
+def get_meal_plan_ingredients(db: Session, meal_plan_id: int) -> MealPlanIngredientSummaryResponse:
+    meal_plan = _load_meal_plan_with_ingredients(db, meal_plan_id)
+    if not meal_plan:
+        raise ValueError("Meal plan not found.")
+
+    grouped: dict[int, dict] = {}
+    for item in sorted(meal_plan.items, key=lambda x: (x.sort_order, x.id)):
+        recipe = item.recipe
+        if not recipe:
+            continue
+        for recipe_ingredient in recipe.recipe_ingredients:
+            ingredient = recipe_ingredient.ingredient
+            if not ingredient:
+                continue
+
+            group = grouped.setdefault(
+                ingredient.id,
+                {
+                    "ingredient_id": ingredient.id,
+                    "name": ingredient.name,
+                    "optional": False,
+                    "is_main": False,
+                    "recipe_ids": set(),
+                    "usages": [],
+                    "units": set(),
+                    "sum": None,
+                    "sum_unit": None,
+                    "mixed_units": False,
+                    "can_sum": True,
+                },
+            )
+
+            amount = recipe_ingredient.amount.strip() if recipe_ingredient.amount else None
+            unit = recipe_ingredient.unit.strip() if recipe_ingredient.unit else None
+            note = recipe_ingredient.note.strip() if recipe_ingredient.note else None
+            optional = bool(recipe_ingredient.optional)
+            is_main = bool(recipe_ingredient.is_main)
+
+            group["optional"] = group["optional"] or optional
+            group["is_main"] = group["is_main"] or is_main
+            group["recipe_ids"].add(recipe.id)
+            if unit:
+                group["units"].add(unit)
+
+            usage = MealPlanIngredientUsageRead(
+                recipe_id=recipe.id,
+                recipe_name=recipe.name,
+                amount=amount,
+                unit=unit,
+                note=note,
+                optional=optional,
+                is_main=is_main,
+            )
+            group["usages"].append(usage)
+
+            numeric_amount = _parse_numeric_amount(amount)
+            if numeric_amount is None or not unit:
+                group["can_sum"] = False
+                continue
+
+            if group["sum_unit"] is None:
+                group["sum_unit"] = unit
+                group["sum"] = numeric_amount
+            elif group["sum_unit"] == unit and group["can_sum"]:
+                group["sum"] += numeric_amount
+            else:
+                group["mixed_units"] = True
+                group["can_sum"] = False
+
+    items: list[MealPlanIngredientSummaryRead] = []
+    for group in grouped.values():
+        if len(group["units"]) > 1:
+            group["mixed_units"] = True
+            group["can_sum"] = False
+
+        total_amount = None
+        total_unit = None
+        if group["can_sum"] and group["sum"] is not None and group["sum_unit"]:
+            total_amount = _format_fraction_amount(group["sum"])
+            total_unit = group["sum_unit"]
+
+        items.append(
+            MealPlanIngredientSummaryRead(
+                ingredient_id=group["ingredient_id"],
+                name=group["name"],
+                total_amount=total_amount,
+                total_unit=total_unit,
+                mixed_units=bool(group["mixed_units"] or total_amount is None),
+                optional=group["optional"],
+                is_main=group["is_main"],
+                recipe_count=len(group["recipe_ids"]),
+                usages=sorted(group["usages"], key=lambda x: (x.recipe_name, x.recipe_id)),
+            )
+        )
+
+    items.sort(key=lambda item: (-int(item.is_main), item.name))
+    return MealPlanIngredientSummaryResponse(meal_plan_id=meal_plan.id, items=items)
 
 
 def update_meal_plan(db: Session, meal_plan_id: int, payload: MealPlanUpdateRequest) -> MealPlanRead:
