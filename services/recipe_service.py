@@ -349,6 +349,25 @@ def get_recipe_by_id(db: Session, recipe_id: int) -> RecipeRead | None:
 
 
 def normalize_existing_ingredients(db: Session) -> None:
+    def merge_recipe_ingredient_rows(target_row: RecipeIngredient, source_row: RecipeIngredient) -> bool:
+        merged = False
+        if not target_row.amount and source_row.amount:
+            target_row.amount = source_row.amount
+            merged = True
+        if not target_row.unit and source_row.unit:
+            target_row.unit = source_row.unit
+            merged = True
+        if not target_row.is_main and source_row.is_main:
+            target_row.is_main = source_row.is_main
+            merged = True
+        if not target_row.note and source_row.note:
+            target_row.note = source_row.note
+            merged = True
+        if not target_row.optional and source_row.optional:
+            target_row.optional = source_row.optional
+            merged = True
+        return merged
+
     rows = db.execute(
         select(RecipeIngredient)
         .options(selectinload(RecipeIngredient.ingredient))
@@ -356,6 +375,7 @@ def normalize_existing_ingredients(db: Session) -> None:
     ).scalars().all()
 
     changed = False
+    grouped_rows: dict[tuple[int, int], RecipeIngredient] = {}
     for row in rows:
         if not row.ingredient:
             continue
@@ -369,6 +389,15 @@ def normalize_existing_ingredients(db: Session) -> None:
             continue
 
         target = get_or_create_ingredient(db, normalized_name)
+        group_key = (row.recipe_id, target.id)
+        survivor = grouped_rows.get(group_key)
+
+        if survivor and survivor.id != row.id:
+            if merge_recipe_ingredient_rows(survivor, row):
+                changed = True
+            db.delete(row)
+            changed = True
+            continue
 
         duplicate = db.execute(
             select(RecipeIngredient).where(
@@ -379,19 +408,20 @@ def normalize_existing_ingredients(db: Session) -> None:
         ).scalar_one_or_none()
 
         if duplicate:
+            if merge_recipe_ingredient_rows(duplicate, row):
+                changed = True
             if not duplicate.amount and normalized_amount:
                 duplicate.amount = normalized_amount
+                changed = True
             if not duplicate.unit and normalized_unit:
                 duplicate.unit = normalized_unit
-            if not duplicate.is_main and row.is_main:
-                duplicate.is_main = row.is_main
-            if not duplicate.note and row.note:
-                duplicate.note = row.note
-            if not duplicate.optional and row.optional:
-                duplicate.optional = row.optional
+                changed = True
+            grouped_rows[group_key] = duplicate
             db.delete(row)
             changed = True
             continue
+
+        grouped_rows[group_key] = row
 
         if row.ingredient_id != target.id:
             row.ingredient_id = target.id
