@@ -6,15 +6,25 @@ from config import load_env_file
 
 load_env_file()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./chef_assistant.db",
-)
 
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgres://"):]
-elif DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
-    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
+def normalize_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg2://" + url[len("postgres://"):]
+    if url.startswith("postgresql://") and "+psycopg2" not in url:
+        return "postgresql+psycopg2://" + url[len("postgresql://"):]
+    return url
+
+
+def get_database_url() -> str:
+    return normalize_database_url(
+        os.getenv(
+            "DATABASE_URL",
+            "sqlite:///./chef_assistant.db",
+        )
+    )
+
+
+DATABASE_URL = get_database_url()
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
