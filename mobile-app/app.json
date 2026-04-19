@@ -9,10 +9,20 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chefassistant.mobile",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.chefassistant.mobile"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "07e612e6-3cdd-48a9-9dc1-b263102b9e25"
+      }
     }
   }
 }
