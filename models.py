@@ -32,6 +32,7 @@ class Recipe(Base):
     main_ingredient = Column(String(255), nullable=True)
     dish_type = Column(String(50), nullable=False, default="other")
     cooking_method = Column(String(50), nullable=False, default="other")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     recipe_ingredients = relationship(
         "RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan"

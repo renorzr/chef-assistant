@@ -1,7 +1,8 @@
 import { apiFetch } from "./client";
 
-export function listRecipes() {
-  return apiFetch("/recipes");
+export function listRecipes({ page = 1, pageSize = 20 } = {}) {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return apiFetch(`/recipes?${params.toString()}`);
 }
 
 export function getRecipe(id) {

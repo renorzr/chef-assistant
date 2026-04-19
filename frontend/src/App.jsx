@@ -996,6 +996,10 @@ function RecipesList() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("loading");
   const [searching, setSearching] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchMode, setSearchMode] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [importLinkOpen, setImportLinkOpen] = useState(false);
   const [textCreateOpen, setTextCreateOpen] = useState(false);
@@ -1017,15 +1021,32 @@ function RecipesList() {
   const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
   const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
   const navigate = useNavigate();
+  const loadMoreRef = useRef(null);
 
-  const loadAll = () => {
-    setStatus("loading");
-    listRecipes()
-      .then((recipeRows) => {
-        setRecipes(recipeRows);
-        setStatus("success");
-      })
-      .catch(() => setStatus("error"));
+  const loadRecipesPage = async (targetPage = 1, { append = false } = {}) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setStatus("loading");
+      setSearchMode(false);
+    }
+
+    try {
+      const payload = await listRecipes({ page: targetPage, pageSize: 20 });
+      const items = payload.items || [];
+      setRecipes((prev) => (append ? [...prev, ...items] : items));
+      setPage(payload.page || targetPage);
+      setTotalPages(payload.total_pages || 0);
+      setStatus("success");
+    } catch {
+      if (!append) {
+        setStatus("error");
+      }
+    } finally {
+      if (append) {
+        setLoadingMore(false);
+      }
+    }
   };
 
   const loadMenus = () => {
@@ -1043,8 +1064,36 @@ function RecipesList() {
   };
 
   useEffect(() => {
-    loadAll();
+    loadRecipesPage(1);
   }, []);
+
+  useEffect(() => {
+    if (searchMode || status !== "success" || loadingMore || page >= totalPages) {
+      return undefined;
+    }
+
+    const node = loadMoreRef.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (!entry?.isIntersecting) {
+          return;
+        }
+        if (loadingMore || searchMode || page >= totalPages) {
+          return;
+        }
+        loadRecipesPage(page + 1, { append: true });
+      },
+      { rootMargin: "200px 0px" }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadingMore, page, searchMode, status, totalPages]);
 
   useEffect(() => {
     const unsubscribe = subscribeImportResult((payload) => {
@@ -1061,7 +1110,7 @@ function RecipesList() {
       setImportError("");
       setImportLinkOpen(false);
       setImportUrl("");
-      loadAll();
+      loadRecipesPage(1);
       if (imported[0]?.recipe_id) {
         navigate(`/recipes/${imported[0].recipe_id}`);
       }
@@ -1138,11 +1187,13 @@ function RecipesList() {
     setSearching(true);
     try {
       if (!query.trim()) {
-        const rows = await listRecipes();
-        setRecipes(rows);
+        await loadRecipesPage(1);
       } else {
         const rows = await searchRecipes(query.trim());
         setRecipes(rows);
+        setPage(1);
+        setTotalPages(rows.length > 0 ? 1 : 0);
+        setSearchMode(true);
       }
     } catch {
       setStatus("error");
@@ -1209,7 +1260,7 @@ function RecipesList() {
       const result = await importRecipeFromText(text);
       setTextCreateOpen(false);
       setRecipeText("");
-      loadAll();
+      await loadRecipesPage(1);
       navigate(`/recipes/${result.recipe.id}`);
     } catch (error) {
       setCreateError(error.message || "新建失败。");
@@ -1219,7 +1270,7 @@ function RecipesList() {
   };
 
   if (status === "loading") return <LoadingBlock />;
-  if (status === "error") return <ErrorBlock onRetry={loadAll} />;
+  if (status === "error") return <ErrorBlock onRetry={() => loadRecipesPage(1)} />;
 
   return (
     <div className="p-4">
@@ -1251,6 +1302,12 @@ function RecipesList() {
           }
         />
       ))}
+
+      {searchMode ? null : (
+        <div ref={loadMoreRef} className="py-4 text-center text-sm text-gray-500">
+          {loadingMore ? "加载中..." : totalPages === 0 ? "暂无数据" : page >= totalPages ? "已经到底了" : "继续上划加载更多"}
+        </div>
+      )}
 
       <RecipeActionSheet
         open={actionSheetOpen}

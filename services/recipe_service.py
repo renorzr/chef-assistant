@@ -1,7 +1,7 @@
 import re
 from collections import Counter
 from typing import List
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from models import Recipe, Ingredient, RecipeIngredient, RecipeStep, RecipeMedia, RecipeEmbedding
@@ -144,6 +144,7 @@ def _to_recipe_read(recipe: Recipe) -> RecipeRead:
         main_ingredient=recipe.main_ingredient,
         dish_type=recipe.dish_type,
         cooking_method=recipe.cooking_method,
+        created_at=recipe.created_at.isoformat() if getattr(recipe, "created_at", None) else None,
         ingredients=ingredients,
         steps=steps,
         media=media,
@@ -325,20 +326,32 @@ def delete_recipe(db: Session, recipe_id: int) -> bool:
     return True
 
 
-def list_recipes(db: Session, skip: int = 0, limit: int = 100) -> List[RecipeRead]:
+def list_recipes(db: Session, page: int = 1, page_size: int = 20) -> dict:
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+    skip = (page - 1) * page_size
+
+    total = db.execute(select(func.count()).select_from(Recipe)).scalar_one()
     rows = db.execute(
         select(Recipe)
         .offset(skip)
-        .limit(limit)
+        .limit(page_size)
         .options(
             selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient),
             selectinload(Recipe.steps),
             selectinload(Recipe.media),
         )
-        .order_by(Recipe.id.asc())
+        .order_by(Recipe.created_at.desc(), Recipe.id.desc())
     ).scalars().all()
 
-    return [_to_recipe_read(r) for r in rows]
+    total_pages = (total + page_size - 1) // page_size if total else 0
+    return {
+        "items": [_to_recipe_read(r) for r in rows],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+    }
 
 
 def get_recipe_by_id(db: Session, recipe_id: int) -> RecipeRead | None:

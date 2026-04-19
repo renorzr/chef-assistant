@@ -87,12 +87,21 @@ class RecipeRead(BaseModel):
     main_ingredient: Optional[str] = None
     dish_type: str
     cooking_method: str
+    created_at: Optional[str] = None
 
     ingredients: List[RecipeIngredientRead]
     steps: List[RecipeStepRead]
     media: List[RecipeMediaRead]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RecipeListResponse(BaseModel):
+    items: List[RecipeRead]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 
 class MenuGenerateRequest(BaseModel):

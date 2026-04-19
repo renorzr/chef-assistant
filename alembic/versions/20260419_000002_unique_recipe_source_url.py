@@ -8,7 +8,7 @@ Create Date: 2026-04-19 00:00:02
 from __future__ import annotations
 
 from alembic import op
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 
 # revision identifiers, used by Alembic.
@@ -24,6 +24,24 @@ def upgrade() -> None:
     tables = set(inspector.get_table_names())
     if "recipes" not in tables:
         return
+
+    # Keep the earliest row for each source_url and null out later duplicates
+    # so the unique index can be created on existing deployments.
+    bind.execute(
+        text(
+            """
+            UPDATE recipes AS duplicate_rows
+            SET source_url = NULL
+            WHERE source_url IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM recipes AS kept_rows
+                WHERE kept_rows.source_url = duplicate_rows.source_url
+                  AND kept_rows.id < duplicate_rows.id
+              )
+            """
+        )
+    )
 
     index_names = {index["name"] for index in inspector.get_indexes("recipes")}
     if "ix_recipes_source_url" not in index_names:

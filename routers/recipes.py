@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from schemas import (
     RecipeCreate,
+    RecipeListResponse,
     RecipeRead,
     VectorSearchRequest,
     VectorSearchResponse,
@@ -36,9 +37,9 @@ def create_recipe_endpoint(
     return recipe
 
 
-@router.get("/recipes", response_model=List[RecipeRead])
-def list_recipes_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return list_recipes(db, skip=skip, limit=limit)
+@router.get("/recipes", response_model=RecipeListResponse)
+def list_recipes_endpoint(page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
+    return list_recipes(db, page=page, page_size=page_size)
 
 
 @router.post("/recipes/search/vector", response_model=VectorSearchResponse)
