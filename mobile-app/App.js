@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 
@@ -70,11 +70,9 @@ export default function App() {
   const importWebViewRef = useRef(null);
   const recipeProbeTimeoutRef = useRef(null);
 
-  const [mainUrl, setMainUrl] = useState(APP_WEB_URL);
   const [importSession, setImportSession] = useState(null);
   const [importStatus, setImportStatus] = useState('idle');
   const [importMessage, setImportMessage] = useState('');
-  const [manualUrl, setManualUrl] = useState(APP_WEB_URL);
 
   const importPageUrl = useMemo(() => importSession?.currentUrl || importSession?.url || null, [importSession]);
   const isRecipeLoadingOverlayVisible = !!importSession && importSession.mode === 'recipe' && (importSession.phase === 'recipe_checking' || importSession.phase === 'recipe_importing');
@@ -279,16 +277,9 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      <View style={styles.devBar}>
-        <TextInput value={manualUrl} onChangeText={setManualUrl} style={styles.urlInput} autoCapitalize="none" autoCorrect={false} />
-        <Pressable style={styles.urlButton} onPress={() => setMainUrl(manualUrl.trim() || APP_WEB_URL)}>
-          <Text style={styles.urlButtonText}>打开</Text>
-        </Pressable>
-      </View>
-
       <WebView
         ref={mainWebViewRef}
-        source={{ uri: mainUrl }}
+        source={{ uri: APP_WEB_URL }}
         onMessage={handleMainMessage}
         javaScriptEnabled
         domStorageEnabled
@@ -358,33 +349,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff'
-  },
-  devBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    gap: 8,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb'
-  },
-  urlInput: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14
-  },
-  urlButton: {
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10
-  },
-  urlButtonText: {
-    color: '#ffffff',
-    fontWeight: '600'
   },
   modalContainer: {
     flex: 1,
