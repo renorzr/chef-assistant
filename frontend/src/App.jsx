@@ -69,7 +69,7 @@ function BottomSheet({ open, title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <button className="absolute inset-0 bg-black/30" onClick={onClose} aria-label="关闭弹窗" />
-      <div className="relative w-full max-w-sm rounded-t-3xl bg-white p-4 shadow-2xl">
+      <div className="relative flex max-h-[85vh] w-full max-w-sm flex-col rounded-t-3xl bg-white p-4 shadow-2xl">
         <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-200" />
         <div className="mb-3 flex items-center justify-between">
           <div className="font-semibold">{title}</div>
@@ -77,7 +77,7 @@ function BottomSheet({ open, title, onClose, children }) {
             关闭
           </button>
         </div>
-        {children}
+        <div className="min-h-0 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -485,7 +485,7 @@ function RecipeStepEditSheet({
         />
         <div>
           <div className="mb-1 text-sm font-medium">步骤图片</div>
-          {previewUrl ? <ImageOrPlaceholder src={previewUrl} alt="步骤预览" className="mb-2 w-full rounded-xl" placeholderClassName="mb-2 h-32 w-full rounded-xl bg-gray-100" /> : <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">当前没有图片</div>}
+          {previewUrl ? <ImageOrPlaceholder src={previewUrl} alt="步骤预览" className="mb-2 max-h-80 w-full rounded-xl object-contain" placeholderClassName="mb-2 h-32 w-full rounded-xl bg-gray-100" /> : <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">当前没有图片</div>}
           <input type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-600" />
         </div>
         {error ? <div className="text-sm text-red-500">{error}</div> : null}
@@ -1558,6 +1558,7 @@ function RecipeDetail() {
   const [coverImageFile, setCoverImageFile] = useState(null);
   const [coverImagePreview, setCoverImagePreview] = useState("");
   const [ingredientsOpen, setIngredientsOpen] = useState(false);
+  const [ingredientsExpanded, setIngredientsExpanded] = useState(false);
   const [ingredientDraft, setIngredientDraft] = useState([]);
   const [stepEditorOpen, setStepEditorOpen] = useState(false);
   const [editingStepId, setEditingStepId] = useState(null);
@@ -1904,23 +1905,39 @@ function RecipeDetail() {
 
       <div className="mb-3">
         <div className="mb-1 font-semibold">食材</div>
-        <div className="space-y-2">
-          {recipe.ingredients.map((ingredient, index) => {
-            const quantity = [ingredient.amount, ingredient.unit].filter(Boolean).join("");
-            return (
-              <div key={ingredient.id || `${ingredient.name}-${index}`} className="rounded-xl bg-white p-2">
-                <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
-                  <div>食材 {index + 1}</div>
-                  <IconButton onClick={openIngredientsEditor} title="编辑食材">
-                    ✎
-                  </IconButton>
-                </div>
-                <div className="font-medium">{ingredient.name}</div>
-                <div className="text-sm text-gray-500">{quantity || "未填写用量"}</div>
+        <button onClick={() => setIngredientsExpanded((prev) => !prev)} className="w-full rounded-xl bg-white p-2 text-left">
+          <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+            <div>共 {recipe.ingredients.length} 项</div>
+            <div className="flex items-center gap-2">
+              <div>{ingredientsExpanded ? "收起" : "展开"}</div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+              >
+                <IconButton onClick={openIngredientsEditor} title="编辑食材">
+                  ✎
+                </IconButton>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          </div>
+
+          {ingredientsExpanded ? (
+            <div className="space-y-2">
+              {recipe.ingredients.map((ingredient, index) => {
+                const quantity = [ingredient.amount, ingredient.unit].filter(Boolean).join("");
+                return (
+                  <div key={ingredient.id || `${ingredient.name}-${index}`} className="flex items-start justify-between gap-3 border-b border-gray-100 pb-2 last:border-b-0 last:pb-0">
+                    <div className="font-medium">{ingredient.name}</div>
+                    <div className="text-right text-sm text-gray-500">{quantity || "未填写用量"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-700">{recipe.ingredients.map((ingredient) => ingredient.name).join("、")}</div>
+          )}
+        </button>
       </div>
 
       <div>
