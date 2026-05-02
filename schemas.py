@@ -104,6 +104,10 @@ class RecipeListResponse(BaseModel):
     total_pages: int
 
 
+class MediaUploadResponse(BaseModel):
+    url: str
+
+
 class MenuGenerateRequest(BaseModel):
     people_count: int = Field(..., ge=1)
     dish_count: int = Field(..., ge=1)

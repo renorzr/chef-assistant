@@ -35,3 +35,26 @@ export function importRecipeFromText(text) {
     body: JSON.stringify({ text })
   });
 }
+
+export async function uploadRecipeStepImage(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/api/media/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const payload = await response.json();
+      detail = payload.detail || detail;
+    } catch {
+      // ignore parse failure
+    }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}

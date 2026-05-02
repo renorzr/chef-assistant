@@ -4,7 +4,7 @@ import { getChatMessages, sendChatMessage } from "./api/chat";
 import { isNativeApp, openXiachufangImport, subscribeImportResult } from "./appBridge";
 import { addMenuItem, createMenuCategory, createMenuFromText, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "./api/menus";
 import { addMealPlanItem, cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, getMealPlanIngredients, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "./api/mealPlans";
-import { getRecipe, importRecipeFromText, listRecipes, searchRecipes, updateRecipe } from "./api/recipes";
+import { getRecipe, importRecipeFromText, listRecipes, searchRecipes, updateRecipe, uploadRecipeStepImage } from "./api/recipes";
 
 function isUsableImage(url) {
   if (!url || typeof url !== "string") return false;
@@ -340,6 +340,138 @@ function RecipeCreateSheet({
 
         <button onClick={onSubmit} disabled={submitting} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
           {submitting ? "处理中" : submitLabel}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function RecipeBasicInfoSheet({ open, values, onChange, onClose, onSubmit, saving, error }) {
+  return (
+    <BottomSheet open={open} title="编辑基础信息" onClose={onClose}>
+      <div className="space-y-3 pb-2">
+        <div>
+          <div className="mb-1 text-sm font-medium">耗时（分钟）</div>
+          <input
+            type="number"
+            min="1"
+            value={values.cook_time_minutes}
+            onChange={(e) => onChange({ ...values, cook_time_minutes: e.target.value })}
+            className="w-full rounded-2xl bg-gray-100 p-3 outline-none"
+          />
+        </div>
+        <div>
+          <div className="mb-1 text-sm font-medium">难度</div>
+          <select
+            value={values.difficulty}
+            onChange={(e) => onChange({ ...values, difficulty: e.target.value })}
+            className="w-full rounded-2xl bg-gray-100 p-3 outline-none"
+          >
+            <option value="easy">easy</option>
+            <option value="medium">medium</option>
+            <option value="hard">hard</option>
+          </select>
+        </div>
+        {error ? <div className="text-sm text-red-500">{error}</div> : null}
+        <button onClick={onSubmit} disabled={saving} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
+          {saving ? "保存中" : "保存"}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function RecipeIngredientsSheet({ open, ingredients, onChange, onClose, onSubmit, saving, error }) {
+  const updateRow = (index, patch) => {
+    onChange(ingredients.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+  };
+
+  const removeRow = (index) => {
+    onChange(ingredients.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const addRow = () => {
+    onChange([...ingredients, { name: "", amount: "", unit: "" }]);
+  };
+
+  return (
+    <BottomSheet open={open} title="编辑食材" onClose={onClose}>
+      <div className="space-y-3 pb-2">
+        <div className="max-h-[60vh] space-y-3 overflow-auto pr-1">
+          {ingredients.map((item, index) => (
+            <div key={index} className="rounded-2xl bg-gray-50 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-medium">食材 {index + 1}</div>
+                <button onClick={() => removeRow(index)} className="text-sm text-red-500">
+                  删除
+                </button>
+              </div>
+              <div className="space-y-2">
+                <input
+                  value={item.name}
+                  onChange={(e) => updateRow(index, { name: e.target.value })}
+                  placeholder="食材名称"
+                  className="w-full rounded-xl bg-white p-3 outline-none"
+                />
+                <div className="flex gap-2">
+                  <input
+                    value={item.amount}
+                    onChange={(e) => updateRow(index, { amount: e.target.value })}
+                    placeholder="数量"
+                    className="flex-1 rounded-xl bg-white p-3 outline-none"
+                  />
+                  <input
+                    value={item.unit}
+                    onChange={(e) => updateRow(index, { unit: e.target.value })}
+                    placeholder="单位"
+                    className="w-24 rounded-xl bg-white p-3 outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button onClick={addRow} className="w-full rounded-2xl bg-gray-100 p-3 text-sm">
+          新增食材
+        </button>
+        {error ? <div className="text-sm text-red-500">{error}</div> : null}
+        <button onClick={onSubmit} disabled={saving} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
+          {saving ? "保存中" : "保存"}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function RecipeStepEditSheet({
+  open,
+  step,
+  instruction,
+  onInstructionChange,
+  onFileChange,
+  previewUrl,
+  onClose,
+  onSubmit,
+  saving,
+  error
+}) {
+  return (
+    <BottomSheet open={open} title={step ? `编辑步骤 ${step.step_order}` : "编辑步骤"} onClose={onClose}>
+      <div className="space-y-3 pb-2">
+        <textarea
+          value={instruction}
+          onChange={(e) => onInstructionChange(e.target.value)}
+          placeholder="步骤说明"
+          className="min-h-32 w-full rounded-2xl bg-gray-100 p-3 outline-none"
+        />
+        <div>
+          <div className="mb-1 text-sm font-medium">步骤图片</div>
+          {previewUrl ? <ImageOrPlaceholder src={previewUrl} alt="步骤预览" className="mb-2 w-full rounded-xl" placeholderClassName="mb-2 h-32 w-full rounded-xl bg-gray-100" /> : <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">当前没有图片</div>}
+          <input type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-600" />
+        </div>
+        {error ? <div className="text-sm text-red-500">{error}</div> : null}
+        <button onClick={onSubmit} disabled={saving} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
+          {saving ? "保存中" : "保存"}
         </button>
       </div>
     </BottomSheet>
@@ -1403,6 +1535,17 @@ function RecipeDetail() {
   const [renaming, setRenaming] = useState(false);
   const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
   const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
+  const [basicInfoOpen, setBasicInfoOpen] = useState(false);
+  const [basicInfoValues, setBasicInfoValues] = useState({ cook_time_minutes: "30", difficulty: "medium" });
+  const [ingredientsOpen, setIngredientsOpen] = useState(false);
+  const [ingredientDraft, setIngredientDraft] = useState([]);
+  const [stepEditorOpen, setStepEditorOpen] = useState(false);
+  const [editingStepId, setEditingStepId] = useState(null);
+  const [stepInstructionDraft, setStepInstructionDraft] = useState("");
+  const [stepImageFile, setStepImageFile] = useState(null);
+  const [stepImagePreview, setStepImagePreview] = useState("");
+  const [savingRecipe, setSavingRecipe] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const reload = () => {
     setStatus("loading");
@@ -1417,6 +1560,75 @@ function RecipeDetail() {
   useEffect(() => {
     reload();
   }, [id]);
+
+  useEffect(() => {
+    if (!recipe) return;
+    setBasicInfoValues({
+      cook_time_minutes: String(recipe.cook_time_minutes || 30),
+      difficulty: recipe.difficulty || "medium"
+    });
+    setIngredientDraft(
+      recipe.ingredients.map((item) => ({
+        name: item.name || "",
+        amount: item.amount || "",
+        unit: item.unit || "",
+        note: item.note || null,
+        optional: !!item.optional,
+        is_main: !!item.is_main
+      }))
+    );
+  }, [recipe]);
+
+  useEffect(() => {
+    if (!stepImageFile) {
+      setStepImagePreview("");
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(stepImageFile);
+    setStepImagePreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [stepImageFile]);
+
+  const buildRecipePayload = (overrides = {}) => {
+    if (!recipe) return null;
+    return {
+      name: recipe.name,
+      description: recipe.description,
+      cook_time_minutes: recipe.cook_time_minutes,
+      difficulty: recipe.difficulty,
+      tags: recipe.tags,
+      source_type: recipe.source_type,
+      source_url: recipe.source_url,
+      cover_image_url: recipe.cover_image_url,
+      main_ingredient: recipe.main_ingredient,
+      dish_type: recipe.dish_type,
+      cooking_method: recipe.cooking_method,
+      ingredients: recipe.ingredients.map((item) => ({
+        name: item.name,
+        amount: item.amount,
+        unit: item.unit,
+        note: item.note,
+        optional: !!item.optional,
+        is_main: !!item.is_main
+      })),
+      steps: recipe.steps.map((step) => ({
+        step_order: step.step_order,
+        instruction: step.instruction,
+        image_url: step.image_url
+      })),
+      media: recipe.media.map((media) => ({
+        media_type: media.media_type,
+        url: media.url
+      })),
+      ...overrides
+    };
+  };
+
+  const saveRecipePayload = async (payload) => {
+    const updated = await updateRecipe(id, payload);
+    setRecipe(updated);
+    return updated;
+  };
 
   const loadMenus = () => {
     setMenusStatus("loading");
@@ -1480,39 +1692,146 @@ function RecipeDetail() {
 
     setRenaming(true);
     try {
-      const updated = await updateRecipe(id, {
-        name: trimmed,
-        description: recipe.description,
-        cook_time_minutes: recipe.cook_time_minutes,
-        difficulty: recipe.difficulty,
-        tags: recipe.tags,
-        source_type: recipe.source_type,
-        source_url: recipe.source_url,
-        cover_image_url: recipe.cover_image_url,
-        main_ingredient: recipe.main_ingredient,
-        dish_type: recipe.dish_type,
-        cooking_method: recipe.cooking_method,
-        ingredients: recipe.ingredients.map((item) => ({
-          name: item.name,
-          amount: item.amount,
-          unit: item.unit,
-          is_main: item.is_main
-        })),
-        steps: recipe.steps.map((step) => ({
-          step_order: step.step_order,
-          instruction: step.instruction,
-          image_url: step.image_url
-        })),
-        media: recipe.media.map((media) => ({
-          media_type: media.media_type,
-          url: media.url
-        }))
-      });
+      const updated = await saveRecipePayload(buildRecipePayload({ name: trimmed }));
       setRecipe(updated);
     } finally {
       setRenaming(false);
     }
   };
+
+  const openBasicInfoEditor = () => {
+    if (!recipe) return;
+    setBasicInfoValues({ cook_time_minutes: String(recipe.cook_time_minutes || 30), difficulty: recipe.difficulty || "medium" });
+    setEditError("");
+    setBasicInfoOpen(true);
+  };
+
+  const saveBasicInfo = async () => {
+    if (!recipe || savingRecipe) return;
+    const cookTime = Number.parseInt(String(basicInfoValues.cook_time_minutes), 10);
+    if (!Number.isFinite(cookTime) || cookTime <= 0) {
+      setEditError("耗时必须是大于 0 的数字。");
+      return;
+    }
+    setSavingRecipe(true);
+    setEditError("");
+    try {
+      await saveRecipePayload(
+        buildRecipePayload({
+          cook_time_minutes: cookTime,
+          difficulty: basicInfoValues.difficulty || "medium"
+        })
+      );
+      setBasicInfoOpen(false);
+    } catch (error) {
+      setEditError(error.message || "保存失败。");
+    } finally {
+      setSavingRecipe(false);
+    }
+  };
+
+  const openIngredientsEditor = () => {
+    if (!recipe) return;
+    setIngredientDraft(
+      recipe.ingredients.map((item) => ({
+        name: item.name || "",
+        amount: item.amount || "",
+        unit: item.unit || "",
+        note: item.note || null,
+        optional: !!item.optional,
+        is_main: !!item.is_main
+      }))
+    );
+    setEditError("");
+    setIngredientsOpen(true);
+  };
+
+  const saveIngredients = async () => {
+    if (!recipe || savingRecipe) return;
+    const cleaned = ingredientDraft
+      .map((item) => ({
+        ...item,
+        name: (item.name || "").trim(),
+        amount: (item.amount || "").trim() || null,
+        unit: (item.unit || "").trim() || null
+      }))
+      .filter((item) => item.name);
+    if (cleaned.length === 0) {
+      setEditError("至少保留一个食材。");
+      return;
+    }
+    setSavingRecipe(true);
+    setEditError("");
+    try {
+      await saveRecipePayload(buildRecipePayload({ ingredients: cleaned }));
+      setIngredientsOpen(false);
+    } catch (error) {
+      setEditError(error.message || "保存失败。");
+    } finally {
+      setSavingRecipe(false);
+    }
+  };
+
+  const openStepEditor = (step) => {
+    setEditingStepId(step.id);
+    setStepInstructionDraft(step.instruction || "");
+    setStepImageFile(null);
+    setStepImagePreview("");
+    setEditError("");
+    setStepEditorOpen(true);
+  };
+
+  const closeStepEditor = () => {
+    setStepEditorOpen(false);
+    setEditingStepId(null);
+    setStepInstructionDraft("");
+    setStepImageFile(null);
+    setStepImagePreview("");
+    setEditError("");
+  };
+
+  const saveStepEdit = async () => {
+    if (!recipe || !editingStepId || savingRecipe) return;
+    const trimmedInstruction = stepInstructionDraft.trim();
+    if (!trimmedInstruction) {
+      setEditError("步骤文字不能为空。");
+      return;
+    }
+
+    setSavingRecipe(true);
+    setEditError("");
+    try {
+      let uploadedImageUrl = null;
+      if (stepImageFile) {
+        const uploadResult = await uploadRecipeStepImage(stepImageFile);
+        uploadedImageUrl = uploadResult.url;
+      }
+
+      const nextSteps = recipe.steps.map((step) =>
+        step.id === editingStepId
+          ? {
+              step_order: step.step_order,
+              instruction: trimmedInstruction,
+              image_url: uploadedImageUrl || step.image_url || null
+            }
+          : {
+              step_order: step.step_order,
+              instruction: step.instruction,
+              image_url: step.image_url
+            }
+      );
+
+      await saveRecipePayload(buildRecipePayload({ steps: nextSteps }));
+      closeStepEditor();
+    } catch (error) {
+      setEditError(error.message || "保存失败。");
+    } finally {
+      setSavingRecipe(false);
+    }
+  };
+
+  const editingStep = recipe?.steps.find((step) => step.id === editingStepId) || null;
+  const stepPreviewUrl = stepImagePreview || editingStep?.image_url || "";
 
   const handlePickMenu = async (menuId) => {
     setSavingMenuId(menuId);
@@ -1542,6 +1861,12 @@ function RecipeDetail() {
           返回
         </button>
         <div className="flex gap-2">
+          <IconButton onClick={openBasicInfoEditor} title="编辑基础信息">
+            ⏱
+          </IconButton>
+          <IconButton onClick={openIngredientsEditor} title="编辑食材">
+            食
+          </IconButton>
           <IconButton onClick={renameRecipe} disabled={renaming} title="修改标题">
             ✎
           </IconButton>
@@ -1568,7 +1893,12 @@ function RecipeDetail() {
             .sort((a, b) => a.step_order - b.step_order)
             .map((step) => (
               <div key={step.id} className="rounded-xl bg-white p-2">
-                <div className="mb-1 text-xs text-gray-500">步骤 {step.step_order}</div>
+                <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
+                  <div>步骤 {step.step_order}</div>
+                  <IconButton onClick={() => openStepEditor(step)} title="编辑步骤">
+                    ✎
+                  </IconButton>
+                </div>
                 <div className="text-sm">{step.instruction}</div>
                 {isUsableImage(step.image_url) ? <ImageOrPlaceholder src={step.image_url} alt="step" className="mt-2 w-full rounded-lg" placeholderClassName="mt-2 h-32 w-full rounded-lg bg-gray-100" /> : null}
               </div>
@@ -1604,6 +1934,45 @@ function RecipeDetail() {
         onComplete={() => resolveExpiredMealPlan("complete")}
         onCancelPlan={() => resolveExpiredMealPlan("cancel")}
         loadingAction={expiredMealPlanAction}
+      />
+
+      <RecipeBasicInfoSheet
+        open={basicInfoOpen}
+        values={basicInfoValues}
+        onChange={setBasicInfoValues}
+        onClose={() => {
+          setBasicInfoOpen(false);
+          setEditError("");
+        }}
+        onSubmit={saveBasicInfo}
+        saving={savingRecipe}
+        error={editError}
+      />
+
+      <RecipeIngredientsSheet
+        open={ingredientsOpen}
+        ingredients={ingredientDraft}
+        onChange={setIngredientDraft}
+        onClose={() => {
+          setIngredientsOpen(false);
+          setEditError("");
+        }}
+        onSubmit={saveIngredients}
+        saving={savingRecipe}
+        error={editError}
+      />
+
+      <RecipeStepEditSheet
+        open={stepEditorOpen}
+        step={editingStep}
+        instruction={stepInstructionDraft}
+        onInstructionChange={setStepInstructionDraft}
+        onFileChange={setStepImageFile}
+        previewUrl={stepPreviewUrl}
+        onClose={closeStepEditor}
+        onSubmit={saveStepEdit}
+        saving={savingRecipe}
+        error={editError}
       />
     </div>
   );

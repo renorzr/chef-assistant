@@ -1,11 +1,24 @@
 import os
+import secrets
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request as UrlRequest, urlopen
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
+
+from schemas import MediaUploadResponse
 
 router = APIRouter()
+UPLOAD_ROOT = Path(__file__).resolve().parent.parent / "uploads" / "recipe-steps"
+ALLOWED_UPLOAD_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+EXTENSION_BY_TYPE = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 ALLOWED_MEDIA_HOSTS = {
     "xiachufang.com",
@@ -26,6 +39,26 @@ def _is_allowed_media_url(url: str) -> bool:
     if host in ALLOWED_MEDIA_HOSTS:
         return True
     return host.endswith(".chuimg.com")
+
+
+@router.post("/media/upload", response_model=MediaUploadResponse, status_code=201)
+async def upload_media(file: UploadFile = File(...)):
+    content_type = (file.content_type or "").lower().strip()
+    if content_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail="Only image uploads are supported.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Image file is too large.")
+
+    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    filename = f"{secrets.token_hex(16)}{EXTENSION_BY_TYPE[content_type]}"
+    file_path = UPLOAD_ROOT / filename
+    file_path.write_bytes(data)
+
+    return MediaUploadResponse(url=f"/uploads/recipe-steps/{filename}")
 
 
 @router.get("/media/proxy")

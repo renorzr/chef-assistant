@@ -20,6 +20,7 @@ from services.embedding_audit_service import get_audit_config, run_audit_once
 app = FastAPI(title="AI Cooking Assistant MVP", version="1.0.0")
 FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+UPLOADS_DIR = Path(__file__).parent / "uploads"
 
 _audit_stop_event: asyncio.Event | None = None
 _audit_task: asyncio.Task | None = None
@@ -99,6 +100,9 @@ _register_api_routers("/api")
 if FRONTEND_ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="frontend-assets")
 
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
 
 @app.get("/", include_in_schema=False)
 def serve_frontend_index():
@@ -109,7 +113,7 @@ def serve_frontend_index():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 def serve_frontend_app(full_path: str):
-    reserved_prefixes = ("api/", "docs", "openapi.json", "redoc", "assets/")
+    reserved_prefixes = ("api/", "docs", "openapi.json", "redoc", "assets/", "uploads/")
     if full_path == "health" or full_path.startswith(reserved_prefixes):
         raise HTTPException(status_code=404, detail="Not found")
 
