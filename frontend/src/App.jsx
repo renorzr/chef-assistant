@@ -273,7 +273,13 @@ function RecipeActionSheet({ open, title = "操作", options, onClose }) {
             disabled={option.disabled}
             className={`w-full rounded-2xl p-3 text-left ${option.tone === "danger" ? "bg-red-50 text-red-600" : "bg-gray-50"} disabled:opacity-40`}
           >
-            {option.loading ? option.loadingLabel || option.label : option.label}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                {option.icon ? <span className="w-5 text-center text-base leading-none">{option.icon}</span> : null}
+                <span>{option.label}</span>
+              </div>
+              {option.loading ? <span className="text-sm text-gray-500">{option.loadingLabel || option.label}</span> : null}
+            </div>
           </button>
         ))}
       </div>
@@ -346,10 +352,18 @@ function RecipeCreateSheet({
   );
 }
 
-function RecipeBasicInfoSheet({ open, values, onChange, onClose, onSubmit, saving, error }) {
+function RecipeBasicInfoSheet({ open, values, onChange, onFileChange, previewUrl, onClose, onSubmit, saving, error }) {
   return (
     <BottomSheet open={open} title="编辑基础信息" onClose={onClose}>
       <div className="space-y-3 pb-2">
+        <div>
+          <div className="mb-1 text-sm font-medium">标题</div>
+          <input
+            value={values.name}
+            onChange={(e) => onChange({ ...values, name: e.target.value })}
+            className="w-full rounded-2xl bg-gray-100 p-3 outline-none"
+          />
+        </div>
         <div>
           <div className="mb-1 text-sm font-medium">耗时（分钟）</div>
           <input
@@ -367,10 +381,15 @@ function RecipeBasicInfoSheet({ open, values, onChange, onClose, onSubmit, savin
             onChange={(e) => onChange({ ...values, difficulty: e.target.value })}
             className="w-full rounded-2xl bg-gray-100 p-3 outline-none"
           >
-            <option value="easy">easy</option>
-            <option value="medium">medium</option>
-            <option value="hard">hard</option>
+            <option value="easy">简单</option>
+            <option value="medium">普通</option>
+            <option value="hard">困难</option>
           </select>
+        </div>
+        <div>
+          <div className="mb-1 text-sm font-medium">主图</div>
+          {previewUrl ? <ImageOrPlaceholder src={previewUrl} alt="主图预览" className="mb-2 h-40 w-full rounded-xl object-cover" placeholderClassName="mb-2 h-40 w-full rounded-xl bg-gray-100" /> : <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">当前没有主图</div>}
+          <input type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-600" />
         </div>
         {error ? <div className="text-sm text-red-500">{error}</div> : null}
         <button onClick={onSubmit} disabled={saving} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
@@ -1532,11 +1551,12 @@ function RecipeDetail() {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [mealPlanSaving, setMealPlanSaving] = useState(false);
   const [addedSuccess, setAddedSuccess] = useState(false);
-  const [renaming, setRenaming] = useState(false);
   const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
   const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
   const [basicInfoOpen, setBasicInfoOpen] = useState(false);
-  const [basicInfoValues, setBasicInfoValues] = useState({ cook_time_minutes: "30", difficulty: "medium" });
+  const [basicInfoValues, setBasicInfoValues] = useState({ name: "", cook_time_minutes: "30", difficulty: "medium" });
+  const [coverImageFile, setCoverImageFile] = useState(null);
+  const [coverImagePreview, setCoverImagePreview] = useState("");
   const [ingredientsOpen, setIngredientsOpen] = useState(false);
   const [ingredientDraft, setIngredientDraft] = useState([]);
   const [stepEditorOpen, setStepEditorOpen] = useState(false);
@@ -1564,6 +1584,7 @@ function RecipeDetail() {
   useEffect(() => {
     if (!recipe) return;
     setBasicInfoValues({
+      name: recipe.name || "",
       cook_time_minutes: String(recipe.cook_time_minutes || 30),
       difficulty: recipe.difficulty || "medium"
     });
@@ -1588,6 +1609,16 @@ function RecipeDetail() {
     setStepImagePreview(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
   }, [stepImageFile]);
+
+  useEffect(() => {
+    if (!coverImageFile) {
+      setCoverImagePreview("");
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(coverImageFile);
+    setCoverImagePreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [coverImageFile]);
 
   const buildRecipePayload = (overrides = {}) => {
     if (!recipe) return null;
@@ -1683,32 +1714,24 @@ function RecipeDetail() {
     }
   };
 
-  const renameRecipe = async () => {
-    if (!recipe || renaming) return;
-    const nextName = window.prompt("修改菜谱标题", recipe.name);
-    if (nextName === null) return;
-    const trimmed = nextName.trim();
-    if (!trimmed || trimmed === recipe.name) return;
-
-    setRenaming(true);
-    try {
-      const updated = await saveRecipePayload(buildRecipePayload({ name: trimmed }));
-      setRecipe(updated);
-    } finally {
-      setRenaming(false);
-    }
-  };
-
   const openBasicInfoEditor = () => {
     if (!recipe) return;
-    setBasicInfoValues({ cook_time_minutes: String(recipe.cook_time_minutes || 30), difficulty: recipe.difficulty || "medium" });
+    setActionSheetOpen(false);
+    setBasicInfoValues({ name: recipe.name || "", cook_time_minutes: String(recipe.cook_time_minutes || 30), difficulty: recipe.difficulty || "medium" });
+    setCoverImageFile(null);
+    setCoverImagePreview("");
     setEditError("");
     setBasicInfoOpen(true);
   };
 
   const saveBasicInfo = async () => {
     if (!recipe || savingRecipe) return;
+    const trimmedName = String(basicInfoValues.name || "").trim();
     const cookTime = Number.parseInt(String(basicInfoValues.cook_time_minutes), 10);
+    if (!trimmedName) {
+      setEditError("标题不能为空。");
+      return;
+    }
     if (!Number.isFinite(cookTime) || cookTime <= 0) {
       setEditError("耗时必须是大于 0 的数字。");
       return;
@@ -1716,10 +1739,17 @@ function RecipeDetail() {
     setSavingRecipe(true);
     setEditError("");
     try {
+      let uploadedCoverImageUrl = recipe.cover_image_url || null;
+      if (coverImageFile) {
+        const uploadResult = await uploadRecipeStepImage(coverImageFile);
+        uploadedCoverImageUrl = uploadResult.url;
+      }
       await saveRecipePayload(
         buildRecipePayload({
+          name: trimmedName,
           cook_time_minutes: cookTime,
-          difficulty: basicInfoValues.difficulty || "medium"
+          difficulty: basicInfoValues.difficulty || "medium",
+          cover_image_url: uploadedCoverImageUrl
         })
       );
       setBasicInfoOpen(false);
@@ -1732,6 +1762,7 @@ function RecipeDetail() {
 
   const openIngredientsEditor = () => {
     if (!recipe) return;
+    setActionSheetOpen(false);
     setIngredientDraft(
       recipe.ingredients.map((item) => ({
         name: item.name || "",
@@ -1861,15 +1892,6 @@ function RecipeDetail() {
           返回
         </button>
         <div className="flex gap-2">
-          <IconButton onClick={openBasicInfoEditor} title="编辑基础信息">
-            ⏱
-          </IconButton>
-          <IconButton onClick={openIngredientsEditor} title="编辑食材">
-            食
-          </IconButton>
-          <IconButton onClick={renameRecipe} disabled={renaming} title="修改标题">
-            ✎
-          </IconButton>
           <IconButton onClick={() => setActionSheetOpen(true)} active={addedSuccess} title="更多操作">
             {addedSuccess ? "✓" : "⋮"}
           </IconButton>
@@ -1882,7 +1904,23 @@ function RecipeDetail() {
 
       <div className="mb-3">
         <div className="mb-1 font-semibold">食材</div>
-        <div className="text-sm text-gray-700">{recipe.ingredients.map((i) => i.name).join("、")}</div>
+        <div className="space-y-2">
+          {recipe.ingredients.map((ingredient, index) => {
+            const quantity = [ingredient.amount, ingredient.unit].filter(Boolean).join("");
+            return (
+              <div key={ingredient.id || `${ingredient.name}-${index}`} className="rounded-xl bg-white p-2">
+                <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
+                  <div>食材 {index + 1}</div>
+                  <IconButton onClick={openIngredientsEditor} title="编辑食材">
+                    ✎
+                  </IconButton>
+                </div>
+                <div className="font-medium">{ingredient.name}</div>
+                <div className="text-sm text-gray-500">{quantity || "未填写用量"}</div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div>
@@ -1911,8 +1949,9 @@ function RecipeDetail() {
         title="菜谱操作"
         onClose={() => setActionSheetOpen(false)}
         options={[
-          { label: "加入餐单", loading: mealPlanSaving, loadingLabel: "加入中", onClick: addCurrentRecipeToMealPlan },
-          { label: "加入菜单", onClick: openMenuPicker }
+          { label: "编辑基础信息", icon: "✎", onClick: openBasicInfoEditor },
+          { label: "加入餐单", icon: "＋", loading: mealPlanSaving, loadingLabel: "加入中", onClick: addCurrentRecipeToMealPlan },
+          { label: "加入菜单", icon: "≣", onClick: openMenuPicker }
         ]}
       />
 
@@ -1940,8 +1979,12 @@ function RecipeDetail() {
         open={basicInfoOpen}
         values={basicInfoValues}
         onChange={setBasicInfoValues}
+        onFileChange={setCoverImageFile}
+        previewUrl={coverImagePreview || recipe.cover_image_url || ""}
         onClose={() => {
           setBasicInfoOpen(false);
+          setCoverImageFile(null);
+          setCoverImagePreview("");
           setEditError("");
         }}
         onSubmit={saveBasicInfo}
