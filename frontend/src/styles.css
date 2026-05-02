@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 html,
 body,
 #root {
@@ -6,4 +10,5 @@ body,
 
 body {
   margin: 0;
+  background-color: rgb(249 250 251);
 }
