@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useRef } from "react";
 import { BottomSheet, ErrorBlock, IconButton, ImageOrPlaceholder, LoadingBlock } from "./common";
+import { COOK_TIME_OPTIONS, formatCookTimeOption } from "../utils/recipeDisplay";
 
 export function MenuPickerSheet({ open, menus, loading, error, onRetry, onClose, onPick, savingMenuId }) {
   return (
@@ -155,6 +156,39 @@ export function ExpiredMealPlanSheet({ open, onClose, onContinue, onComplete, on
   );
 }
 
+export function ConfirmActionSheet({
+  open,
+  title,
+  message,
+  confirmLabel = "确认",
+  confirmTone = "danger",
+  loading = false,
+  onClose,
+  onConfirm
+}) {
+  const confirmToneClass =
+    confirmTone === "danger"
+      ? "bg-red-600"
+      : confirmTone === "warning"
+        ? "bg-yellow-500"
+        : "bg-black";
+
+  return (
+    <BottomSheet open={open} title={title} onClose={onClose}>
+      <div className="space-y-3 pb-2">
+        <div className="text-sm text-gray-500">{message}</div>
+        <button
+          onClick={onConfirm}
+          disabled={loading}
+          className={`w-full rounded-2xl p-3 text-white disabled:opacity-40 ${confirmToneClass}`}
+        >
+          {loading ? "处理中" : confirmLabel}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
 export function RecipeCreateSheet({ open, title, placeholder, value, onChange, onClose, onSubmit, submitting, submitLabel, error, inputProps = {} }) {
   const { multiline, ...restInputProps } = inputProps;
 
@@ -178,6 +212,10 @@ export function RecipeCreateSheet({ open, title, placeholder, value, onChange, o
 }
 
 export function RecipeBasicInfoSheet({ open, values, onChange, onFileChange, previewUrl, onClose, onSubmit, saving, error }) {
+  const fileInputRef = useRef(null);
+  const currentCookTime = Number(values.cook_time_minutes || COOK_TIME_OPTIONS[2]);
+  const selectedIndex = Math.max(COOK_TIME_OPTIONS.indexOf(currentCookTime), 0);
+
   return (
     <BottomSheet open={open} title="编辑基础信息" onClose={onClose}>
       <div className="space-y-3 pb-2">
@@ -186,8 +224,24 @@ export function RecipeBasicInfoSheet({ open, values, onChange, onFileChange, pre
           <input value={values.name} onChange={(e) => onChange({ ...values, name: e.target.value })} className="w-full rounded-2xl bg-gray-100 p-3 outline-none" />
         </div>
         <div>
-          <div className="mb-1 text-sm font-medium">耗时（分钟）</div>
-          <input type="number" min="1" value={values.cook_time_minutes} onChange={(e) => onChange({ ...values, cook_time_minutes: e.target.value })} className="w-full rounded-2xl bg-gray-100 p-3 outline-none" />
+          <div className="mb-1 text-sm font-medium">耗时</div>
+          <div className="rounded-2xl bg-gray-100 p-3">
+            <div className="mb-3 text-sm font-medium text-gray-700">{formatCookTimeOption(currentCookTime)}</div>
+            <input
+              type="range"
+              min="0"
+              max={String(COOK_TIME_OPTIONS.length - 1)}
+              step="1"
+              value={selectedIndex}
+              onChange={(e) => onChange({ ...values, cook_time_minutes: String(COOK_TIME_OPTIONS[Number(e.target.value)]) })}
+              className="w-full"
+            />
+            <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs text-gray-500">
+              {COOK_TIME_OPTIONS.map((option) => (
+                <div key={option}>{formatCookTimeOption(option)}</div>
+              ))}
+            </div>
+          </div>
         </div>
         <div>
           <div className="mb-1 text-sm font-medium">难度</div>
@@ -199,8 +253,17 @@ export function RecipeBasicInfoSheet({ open, values, onChange, onFileChange, pre
         </div>
         <div>
           <div className="mb-1 text-sm font-medium">主图</div>
-          {previewUrl ? <ImageOrPlaceholder src={previewUrl} alt="主图预览" className="mb-2 h-40 w-full rounded-xl object-cover" placeholderClassName="mb-2 h-40 w-full rounded-xl bg-gray-100" /> : <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">当前没有主图</div>}
-          <input type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-600" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="block w-full text-left">
+            {previewUrl ? (
+              <div>
+                <ImageOrPlaceholder src={previewUrl} alt="主图预览" className="mb-2 h-40 w-full rounded-xl object-cover" placeholderClassName="mb-2 h-40 w-full rounded-xl bg-gray-100" />
+                <div className="text-sm text-gray-500">点击更换图片</div>
+              </div>
+            ) : (
+              <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">点击上传主图</div>
+            )}
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="hidden" />
         </div>
         {error ? <div className="text-sm text-red-500">{error}</div> : null}
         <button onClick={onSubmit} disabled={saving} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
@@ -259,14 +322,25 @@ export function RecipeIngredientsSheet({ open, ingredients, onChange, onClose, o
 }
 
 export function RecipeStepEditSheet({ open, step, instruction, onInstructionChange, onFileChange, previewUrl, onClose, onSubmit, saving, error }) {
+  const fileInputRef = useRef(null);
+
   return (
     <BottomSheet open={open} title={step ? `编辑步骤 ${step.step_order}` : "编辑步骤"} onClose={onClose}>
       <div className="space-y-3 pb-2">
         <textarea value={instruction} onChange={(e) => onInstructionChange(e.target.value)} placeholder="步骤说明" className="min-h-32 w-full rounded-2xl bg-gray-100 p-3 outline-none" />
         <div>
           <div className="mb-1 text-sm font-medium">步骤图片</div>
-          {previewUrl ? <ImageOrPlaceholder src={previewUrl} alt="步骤预览" className="mb-2 max-h-80 w-full rounded-xl object-contain" placeholderClassName="mb-2 h-32 w-full rounded-xl bg-gray-100" /> : <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">当前没有图片</div>}
-          <input type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-600" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="block w-full text-left">
+            {previewUrl ? (
+              <div>
+                <ImageOrPlaceholder src={previewUrl} alt="步骤预览" className="mb-2 max-h-80 w-full rounded-xl object-contain" placeholderClassName="mb-2 h-32 w-full rounded-xl bg-gray-100" />
+                <div className="text-sm text-gray-500">点击更换图片</div>
+              </div>
+            ) : (
+              <div className="mb-2 rounded-xl bg-gray-100 p-4 text-sm text-gray-500">点击上传步骤图片</div>
+            )}
+          </button>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => onFileChange(e.target.files?.[0] || null)} className="hidden" />
         </div>
         {error ? <div className="text-sm text-red-500">{error}</div> : null}
         <button onClick={onSubmit} disabled={saving} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">

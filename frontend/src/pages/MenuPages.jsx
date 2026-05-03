@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { addMenuItem, createMenuCategory, createMenuFromText, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "../api/menus";
+import { addMenuItem, createMenuCategory, createMenuFromText, deleteMenu, getMenu, listMenus, removeMenuItem, updateMenu, updateMenuItem } from "../api/menus";
 import { addMealPlanItem } from "../api/mealPlans";
 import { LinkCard, RecipeCard } from "../components/cards";
 import { ErrorBlock, IconButton, LoadingBlock } from "../components/common";
-import { CategoryPickerSheet, ExpiredMealPlanSheet, RecipeActionSheet } from "../components/sheets";
+import { CategoryPickerSheet, ConfirmActionSheet, ExpiredMealPlanSheet, RecipeActionSheet } from "../components/sheets";
 
 export function MenusListPage() {
   const [menus, setMenus] = useState([]);
@@ -75,6 +75,9 @@ export function MenuDetailPage() {
   const [addedMealPlanItemId, setAddedMealPlanItemId] = useState(null);
   const [expiredMealPlanOpen, setExpiredMealPlanOpen] = useState(false);
   const [expiredMealPlanAction, setExpiredMealPlanAction] = useState("");
+  const [menuActionOpen, setMenuActionOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingMenu, setDeletingMenu] = useState(false);
 
   const reload = () => {
     setStatus("loading");
@@ -198,6 +201,17 @@ export function MenuDetailPage() {
     }
   };
 
+  const confirmDeleteMenu = async () => {
+    if (!menu || deletingMenu) return;
+    setDeletingMenu(true);
+    try {
+      await deleteMenu(id);
+      navigate("/menus");
+    } finally {
+      setDeletingMenu(false);
+    }
+  };
+
   const groupedItems = useMemo(() => {
     if (!menu) return [];
     const categoryOrder = new Map(menu.categories.map((category, index) => [category.name, index]));
@@ -234,7 +248,10 @@ export function MenuDetailPage() {
     <div className="p-4">
       <div className="mb-3 flex items-center justify-between">
         <h1 className="text-lg font-bold">{menu.name}</h1>
-        <IconButton onClick={renameMenu} disabled={renaming} title="修改标题">✎</IconButton>
+        <div className="flex gap-2">
+          <IconButton onClick={renameMenu} disabled={renaming} title="修改标题">✎</IconButton>
+          <IconButton onClick={() => setMenuActionOpen(true)} title="更多操作">⋮</IconButton>
+        </div>
       </div>
 
       {groupedItems.map((group) => (
@@ -257,9 +274,23 @@ export function MenuDetailPage() {
         { label: "移出菜单", tone: "danger", loading: removingId === actionItem?.id, loadingLabel: "移出中", onClick: () => removeItemFromMenu(actionItem.id) }
       ]} />
 
+      <RecipeActionSheet open={menuActionOpen} title="菜单操作" onClose={() => setMenuActionOpen(false)} options={[
+        { label: "删除菜单", icon: "⌫", tone: "danger", onClick: () => { setMenuActionOpen(false); setDeleteConfirmOpen(true); } }
+      ]} />
+
       <CategoryPickerSheet open={!!categoryItem} categories={menu.categories} currentCategoryId={categoryItem?.category_id} currentCategoryName={categoryItem?.category_name} creating={categorySaving} error={categoryError} newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName} selectedCategoryId={selectedCategoryId} setSelectedCategoryId={setSelectedCategoryId} onClose={() => setCategoryItem(null)} onSubmit={saveCategoryChange} />
 
       <ExpiredMealPlanSheet open={expiredMealPlanOpen} onClose={() => setExpiredMealPlanOpen(false)} onContinue={() => resolveExpiredMealPlan("continue")} onComplete={() => resolveExpiredMealPlan("complete")} onCancelPlan={() => resolveExpiredMealPlan("cancel")} loadingAction={expiredMealPlanAction} />
+
+      <ConfirmActionSheet
+        open={deleteConfirmOpen}
+        title="删除菜单"
+        message="删除后不可恢复，菜单中的分组和菜谱引用会一起移除，确定删除吗？"
+        confirmLabel="删除菜单"
+        loading={deletingMenu}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={confirmDeleteMenu}
+      />
     </div>
   );
 }

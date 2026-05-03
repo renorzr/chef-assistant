@@ -29,6 +29,12 @@ export function updateRecipe(id, payload) {
   });
 }
 
+export function deleteRecipe(id) {
+  return apiFetch(`/recipes/${id}`, {
+    method: "DELETE"
+  });
+}
+
 export function importRecipeFromText(text) {
   return apiFetch("/recipes/import/from-text", {
     method: "POST",

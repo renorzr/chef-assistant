@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { cancelMealPlan, completeMealPlan, copyMealPlan, deleteMealPlan, getCurrentMealPlan, getMealPlan, getMealPlanIngredients, listMealPlans, removeMealPlanItem, resumeMealPlan, updateMealPlan } from "../api/mealPlans";
 import { RecipeCard } from "../components/cards";
 import { ErrorBlock, IconButton, LoadingBlock } from "../components/common";
-import { RecipeActionSheet } from "../components/sheets";
+import { ConfirmActionSheet, RecipeActionSheet } from "../components/sheets";
 
 export default function PlanPage() {
   const navigate = useNavigate();
@@ -24,6 +24,8 @@ export default function PlanPage() {
   const [ingredientSummary, setIngredientSummary] = useState([]);
   const [ingredientSummaryError, setIngredientSummaryError] = useState("");
   const [expandedIngredients, setExpandedIngredients] = useState({});
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const listBottomRef = useRef(null);
 
   const loadMealPlans = async () => {
@@ -109,7 +111,7 @@ export default function PlanPage() {
             </div>
           )}
 
-          <div className="fixed bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 border-t bg-white p-4"><div className="flex gap-2"><button onClick={completeCurrent} disabled={completing} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{completing ? "完成中" : "完成餐单"}</button><button onClick={cancelCurrent} disabled={cancelling} className="flex-1 rounded-xl bg-yellow-50 p-3 text-yellow-700 disabled:opacity-40">{cancelling ? "取消中" : "取消餐单"}</button><button onClick={deleteCurrent} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button></div></div>
+          <div className="fixed bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 border-t bg-white p-4"><div className="flex gap-2"><button onClick={completeCurrent} disabled={completing} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{completing ? "完成中" : "完成餐单"}</button><button onClick={() => setCancelConfirmOpen(true)} disabled={cancelling} className="flex-1 rounded-xl bg-yellow-50 p-3 text-yellow-700 disabled:opacity-40">{cancelling ? "取消中" : "取消餐单"}</button><button onClick={() => setDeleteConfirmOpen(true)} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button></div></div>
         </div>
       ) : (
         <div>
@@ -120,6 +122,33 @@ export default function PlanPage() {
       )}
 
       <RecipeActionSheet open={!!actionItem} title="菜谱操作" onClose={() => setActionItem(null)} options={[{ label: "移出餐单", tone: "danger", loading: removingItemId === actionItem?.id, loadingLabel: "移出中", onClick: () => removeFromMealPlan(actionItem.id) }]} />
+
+      <ConfirmActionSheet
+        open={cancelConfirmOpen}
+        title="取消餐单"
+        message="确定取消当前餐单吗？之后仍可从最近餐单中恢复。"
+        confirmLabel="取消餐单"
+        confirmTone="default"
+        loading={cancelling}
+        onClose={() => setCancelConfirmOpen(false)}
+        onConfirm={async () => {
+          await cancelCurrent();
+          setCancelConfirmOpen(false);
+        }}
+      />
+
+      <ConfirmActionSheet
+        open={deleteConfirmOpen}
+        title="删除餐单"
+        message="删除后不可恢复，确定删除当前餐单吗？"
+        confirmLabel="删除餐单"
+        loading={deleting}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={async () => {
+          await deleteCurrent();
+          setDeleteConfirmOpen(false);
+        }}
+      />
     </div>
   );
 }

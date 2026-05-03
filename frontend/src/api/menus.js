@@ -22,6 +22,12 @@ export function updateMenu(menuId, payload) {
   });
 }
 
+export function deleteMenu(menuId) {
+  return apiFetch(`/menus/${menuId}`, {
+    method: "DELETE"
+  });
+}
+
 export function addMenuItem(menuId, recipeId) {
   return apiFetch(`/menus/${menuId}/items`, {
     method: "POST",

@@ -2,11 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { addMenuItem, listMenus } from "../api/menus";
 import { addMealPlanItem } from "../api/mealPlans";
-import { getRecipe, importRecipeFromText, listRecipes, searchRecipes, updateRecipe, uploadRecipeStepImage } from "../api/recipes";
+import { deleteRecipe, getRecipe, importRecipeFromText, listRecipes, searchRecipes, updateRecipe, uploadRecipeStepImage } from "../api/recipes";
 import { isNativeApp, openXiachufangImport, subscribeImportResult } from "../appBridge";
 import { RecipeCard } from "../components/cards";
 import { ErrorBlock, IconButton, ImageOrPlaceholder, LoadingBlock } from "../components/common";
-import { ExpiredMealPlanSheet, MenuPickerSheet, RecipeActionSheet, RecipeBasicInfoSheet, RecipeCreateSheet, RecipeIngredientsSheet, RecipeStepEditSheet } from "../components/sheets";
+import { ConfirmActionSheet, ExpiredMealPlanSheet, MenuPickerSheet, RecipeActionSheet, RecipeBasicInfoSheet, RecipeCreateSheet, RecipeIngredientsSheet, RecipeStepEditSheet } from "../components/sheets";
+import { formatDifficulty, nearestCookTimeOption } from "../utils/recipeDisplay";
 import { normalizeXiachufangRecipeUrl } from "../utils/xiachufang";
 
 export function RecipesListPage() {
@@ -250,12 +251,14 @@ export function RecipeDetailPage() {
   const [stepImagePreview, setStepImagePreview] = useState("");
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [editError, setEditError] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingRecipe, setDeletingRecipe] = useState(false);
 
   const reload = () => { setStatus("loading"); getRecipe(id).then((data) => { setRecipe(data); setStatus("success"); }).catch(() => setStatus("error")); };
   useEffect(() => { reload(); }, [id]);
   useEffect(() => {
     if (!recipe) return;
-    setBasicInfoValues({ name: recipe.name || "", cook_time_minutes: String(recipe.cook_time_minutes || 30), difficulty: recipe.difficulty || "medium" });
+    setBasicInfoValues({ name: recipe.name || "", cook_time_minutes: String(nearestCookTimeOption(recipe.cook_time_minutes || 30)), difficulty: recipe.difficulty || "medium" });
     setIngredientDraft(recipe.ingredients.map((item) => ({ name: item.name || "", amount: item.amount || "", unit: item.unit || "", note: item.note || null, optional: !!item.optional, is_main: !!item.is_main })));
   }, [recipe]);
   useEffect(() => {
@@ -273,7 +276,7 @@ export function RecipeDetailPage() {
   const openMenuPicker = () => { setActionSheetOpen(false); setSheetOpen(true); if (menusStatus === "idle") loadMenus(); };
   const addCurrentRecipeToMealPlan = async () => { if (!recipe || mealPlanSaving) return; setMealPlanSaving(true); try { const result = await addMealPlanItem(recipe.id, "ask"); if (result.status === "expired_confirmation_required") { setActionSheetOpen(false); setExpiredMealPlanOpen(true); return; } setActionSheetOpen(false); setAddedSuccess(true); setTimeout(() => setAddedSuccess(false), 900); } finally { setMealPlanSaving(false); } };
   const resolveExpiredMealPlan = async (mode) => { if (!recipe) return; setExpiredMealPlanAction(mode); try { await addMealPlanItem(recipe.id, mode); setExpiredMealPlanOpen(false); setAddedSuccess(true); setTimeout(() => setAddedSuccess(false), 900); } finally { setExpiredMealPlanAction(""); } };
-  const openBasicInfoEditor = () => { if (!recipe) return; setActionSheetOpen(false); setBasicInfoValues({ name: recipe.name || "", cook_time_minutes: String(recipe.cook_time_minutes || 30), difficulty: recipe.difficulty || "medium" }); setCoverImageFile(null); setCoverImagePreview(""); setEditError(""); setBasicInfoOpen(true); };
+  const openBasicInfoEditor = () => { if (!recipe) return; setActionSheetOpen(false); setBasicInfoValues({ name: recipe.name || "", cook_time_minutes: String(nearestCookTimeOption(recipe.cook_time_minutes || 30)), difficulty: recipe.difficulty || "medium" }); setCoverImageFile(null); setCoverImagePreview(""); setEditError(""); setBasicInfoOpen(true); };
   const saveBasicInfo = async () => {
     if (!recipe || savingRecipe) return;
     const trimmedName = String(basicInfoValues.name || "").trim();
@@ -314,6 +317,16 @@ export function RecipeDetailPage() {
   const editingStep = recipe?.steps.find((step) => step.id === editingStepId) || null;
   const stepPreviewUrl = stepImagePreview || editingStep?.image_url || "";
   const handlePickMenu = async (menuId) => { setSavingMenuId(menuId); try { await addMenuItem(menuId, recipe.id); setSheetOpen(false); setAddedSuccess(true); setTimeout(() => setAddedSuccess(false), 900); if (menusStatus === "success") setMenus((prev) => prev.map((m) => (String(m.id) === String(menuId) ? { ...m, item_count: (m.item_count || 0) + 1 } : m))); } catch (err) { setMenuError(err.message); setMenusStatus("error"); } finally { setSavingMenuId(null); } };
+  const confirmDeleteRecipe = async () => {
+    if (!recipe || deletingRecipe) return;
+    setDeletingRecipe(true);
+    try {
+      await deleteRecipe(id);
+      navigate("/recipes");
+    } finally {
+      setDeletingRecipe(false);
+    }
+  };
 
   if (status === "loading") return <LoadingBlock />;
   if (status === "error") return <ErrorBlock onRetry={reload} />;
@@ -329,15 +342,25 @@ export function RecipeDetailPage() {
         <h1 className="text-lg font-bold">{recipe.name}</h1>
         <IconButton onClick={openBasicInfoEditor} title="编辑基础信息">✎</IconButton>
       </div>
-      <div className="mb-3 text-sm text-gray-500">⏱{recipe.cook_time_minutes}min ⭐{recipe.difficulty}</div>
+      <div className="mb-3 text-sm text-gray-500">⏱{recipe.cook_time_minutes}min ⭐{formatDifficulty(recipe.difficulty)}</div>
       <div className="mb-3"><div className="mb-1 font-semibold">食材</div><button onClick={() => setIngredientsExpanded((prev) => !prev)} className="w-full rounded-xl bg-white p-2 text-left"><div className="mb-2 flex items-center justify-between text-xs text-gray-500"><div>共 {recipe.ingredients.length} 项</div><div className="flex items-center gap-2"><div>{ingredientsExpanded ? "收起" : "展开"}</div><div onClick={(e) => { e.stopPropagation(); }}><IconButton onClick={openIngredientsEditor} title="编辑食材">✎</IconButton></div></div></div>{ingredientsExpanded ? <div className="space-y-2">{recipe.ingredients.map((ingredient, index) => { const quantity = [ingredient.amount, ingredient.unit].filter(Boolean).join(""); return <div key={ingredient.id || `${ingredient.name}-${index}`} className="flex items-start justify-between gap-3 border-b border-gray-100 pb-2 last:border-b-0 last:pb-0"><div className="font-medium">{ingredient.name}</div><div className="text-right text-sm text-gray-500">{quantity || "未填写用量"}</div></div>; })}</div> : <div className="text-sm text-gray-700">{recipe.ingredients.map((ingredient) => ingredient.name).join("、")}</div>}</button></div>
       <div><div className="mb-1 font-semibold">步骤</div><div className="space-y-2">{recipe.steps.slice().sort((a, b) => a.step_order - b.step_order).map((step) => <div key={step.id} className="rounded-xl bg-white p-2"><div className="mb-1 flex items-center justify-between text-xs text-gray-500"><div>步骤 {step.step_order}</div><IconButton onClick={() => openStepEditor(step)} title="编辑步骤">✎</IconButton></div><div className="text-sm">{step.instruction}</div>{step.image_url ? <ImageOrPlaceholder src={step.image_url} alt="step" className="mt-2 w-full rounded-lg" placeholderClassName="mt-2 h-32 w-full rounded-lg bg-gray-100" /> : null}</div>)}</div></div>
-      <RecipeActionSheet open={actionSheetOpen} title="菜谱操作" onClose={() => setActionSheetOpen(false)} options={[{ label: "加入餐单", icon: "＋", loading: mealPlanSaving, loadingLabel: "加入中", onClick: addCurrentRecipeToMealPlan }, { label: "加入菜单", icon: "≣", onClick: openMenuPicker }]} />
+      <RecipeActionSheet open={actionSheetOpen} title="菜谱操作" onClose={() => setActionSheetOpen(false)} options={[{ label: "加入餐单", icon: "＋", loading: mealPlanSaving, loadingLabel: "加入中", onClick: addCurrentRecipeToMealPlan }, { label: "加入菜单", icon: "≣", onClick: openMenuPicker }, { label: "删除菜谱", icon: "⌫", tone: "danger", onClick: () => { setActionSheetOpen(false); setDeleteConfirmOpen(true); } }]} />
       <MenuPickerSheet open={sheetOpen} menus={menus} loading={menusStatus === "loading"} error={menusStatus === "error" ? menuError || "加载失败" : ""} onRetry={loadMenus} onClose={() => setSheetOpen(false)} onPick={handlePickMenu} savingMenuId={savingMenuId} />
       <ExpiredMealPlanSheet open={expiredMealPlanOpen} onClose={() => setExpiredMealPlanOpen(false)} onContinue={() => resolveExpiredMealPlan("continue")} onComplete={() => resolveExpiredMealPlan("complete")} onCancelPlan={() => resolveExpiredMealPlan("cancel")} loadingAction={expiredMealPlanAction} />
       <RecipeBasicInfoSheet open={basicInfoOpen} values={basicInfoValues} onChange={setBasicInfoValues} onFileChange={setCoverImageFile} previewUrl={coverImagePreview || recipe.cover_image_url || ""} onClose={() => { setBasicInfoOpen(false); setCoverImageFile(null); setCoverImagePreview(""); setEditError(""); }} onSubmit={saveBasicInfo} saving={savingRecipe} error={editError} />
       <RecipeIngredientsSheet open={ingredientsOpen} ingredients={ingredientDraft} onChange={setIngredientDraft} onClose={() => { setIngredientsOpen(false); setEditError(""); }} onSubmit={saveIngredients} saving={savingRecipe} error={editError} />
       <RecipeStepEditSheet open={stepEditorOpen} step={editingStep} instruction={stepInstructionDraft} onInstructionChange={setStepInstructionDraft} onFileChange={setStepImageFile} previewUrl={stepPreviewUrl} onClose={closeStepEditor} onSubmit={saveStepEdit} saving={savingRecipe} error={editError} />
+
+      <ConfirmActionSheet
+        open={deleteConfirmOpen}
+        title="删除菜谱"
+        message="删除后不可恢复，确定删除这道菜谱吗？"
+        confirmLabel="删除菜谱"
+        loading={deletingRecipe}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={confirmDeleteRecipe}
+      />
     </div>
   );
 }

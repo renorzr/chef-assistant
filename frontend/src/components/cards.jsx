@@ -1,5 +1,6 @@
 import React from "react";
 import { ImageOrPlaceholder } from "./common";
+import { formatDifficulty } from "../utils/recipeDisplay";
 
 export function RecipeCard({ recipe, subtitle, onClick, footer, overlayActions }) {
   return (
@@ -12,7 +13,7 @@ export function RecipeCard({ recipe, subtitle, onClick, footer, overlayActions }
           placeholderClassName="mb-2 h-32 rounded-xl bg-gray-200"
         />
         <div className="font-semibold">{recipe.name}</div>
-        <div className="text-xs text-gray-500">{subtitle || `⏱${recipe.cook_time_minutes}min ⭐${recipe.difficulty}`}</div>
+        <div className="text-xs text-gray-500">{subtitle || `⏱${recipe.cook_time_minutes}min ⭐${formatDifficulty(recipe.difficulty)}`}</div>
       </div>
 
       {overlayActions ? <div className="absolute bottom-3 right-3 flex gap-2">{overlayActions}</div> : null}
