@@ -4,7 +4,7 @@ const DIFFICULTY_LABELS = {
   hard: "困难"
 };
 
-export const COOK_TIME_OPTIONS = [10, 20, 30, 40, 50, 60, 120, 180];
+export const COOK_TIME_OPTIONS = [10, 20, 30, 40, 50, 60, 90, 120, 150, 180];
 
 export function formatDifficulty(value) {
   return DIFFICULTY_LABELS[value] || value || "";
@@ -12,7 +12,9 @@ export function formatDifficulty(value) {
 
 export function formatCookTimeOption(minutes) {
   if (minutes === 60) return "1小时";
+  if (minutes === 90) return "1.5小时";
   if (minutes === 120) return "2小时";
+  if (minutes === 150) return "2.5小时";
   if (minutes >= 180) return "3小时及以上";
   return `${minutes}分钟`;
 }

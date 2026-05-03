@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { toDisplayImageUrl } from "../utils/image";
 
-export function Spinner() {
-  return <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-black" />;
+export function Spinner({ size = "default", tone = "dark" }) {
+  const sizeClass = size === "sm" ? "h-4 w-4 border-2" : "h-8 w-8 border-4";
+  const toneClass = tone === "light" ? "border-white/30 border-t-white" : "border-gray-200 border-t-black";
+  return <div className={`animate-spin rounded-full ${sizeClass} ${toneClass}`} />;
 }
 
 export function LoadingBlock() {

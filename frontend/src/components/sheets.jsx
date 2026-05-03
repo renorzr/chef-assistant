@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { BottomSheet, ErrorBlock, IconButton, ImageOrPlaceholder, LoadingBlock } from "./common";
+import { BottomSheet, ErrorBlock, IconButton, ImageOrPlaceholder, LoadingBlock, Spinner } from "./common";
 import { COOK_TIME_OPTIONS, formatCookTimeOption } from "../utils/recipeDisplay";
 
 export function MenuPickerSheet({ open, menus, loading, error, onRetry, onClose, onPick, savingMenuId }) {
@@ -191,20 +191,22 @@ export function ConfirmActionSheet({
 
 export function RecipeCreateSheet({ open, title, placeholder, value, onChange, onClose, onSubmit, submitting, submitLabel, error, inputProps = {} }) {
   const { multiline, ...restInputProps } = inputProps;
+  const loadingLabel = submitLabel === "开始导入" ? "导入中" : submitLabel === "解析并保存" ? "创建中" : "处理中";
 
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
       <div className="space-y-3 pb-2">
         {multiline ? (
-          <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="min-h-40 w-full rounded-2xl bg-gray-100 p-3 outline-none" {...restInputProps} />
+          <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={submitting} className="min-h-40 w-full rounded-2xl bg-gray-100 p-3 outline-none disabled:opacity-50" {...restInputProps} />
         ) : (
-          <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full rounded-2xl bg-gray-100 p-3 outline-none" {...restInputProps} />
+          <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={submitting} className="w-full rounded-2xl bg-gray-100 p-3 outline-none disabled:opacity-50" {...restInputProps} />
         )}
 
         {error ? <div className="text-sm text-red-500">{error}</div> : null}
 
-        <button onClick={onSubmit} disabled={submitting} className="w-full rounded-2xl bg-black p-3 text-white disabled:opacity-40">
-          {submitting ? "处理中" : submitLabel}
+        <button onClick={onSubmit} disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-black p-3 text-white disabled:opacity-40">
+          {submitting ? <Spinner size="sm" tone="light" /> : null}
+          <span>{submitting ? loadingLabel : submitLabel}</span>
         </button>
       </div>
     </BottomSheet>
@@ -236,11 +238,6 @@ export function RecipeBasicInfoSheet({ open, values, onChange, onFileChange, pre
               onChange={(e) => onChange({ ...values, cook_time_minutes: String(COOK_TIME_OPTIONS[Number(e.target.value)]) })}
               className="w-full"
             />
-            <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs text-gray-500">
-              {COOK_TIME_OPTIONS.map((option) => (
-                <div key={option}>{formatCookTimeOption(option)}</div>
-              ))}
-            </div>
           </div>
         </div>
         <div>
