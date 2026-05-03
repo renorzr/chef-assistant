@@ -90,6 +90,7 @@ export default function PlanPage() {
     if (ingredientSummaryStatus === "idle") await loadIngredientSummary(currentMealPlan.id);
   };
   const toggleIngredientDetail = (ingredientId) => setExpandedIngredients((prev) => ({ ...prev, [ingredientId]: !prev[ingredientId] }));
+  const isEditingPlan = currentMealPlan?.status === "editing";
 
   if (status === "loading") return <LoadingBlock />;
   if (status === "error") return <ErrorBlock onRetry={loadMealPlans} />;
@@ -111,13 +112,27 @@ export default function PlanPage() {
             </div>
           )}
 
-          <div className="fixed bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 border-t bg-white p-4"><div className="flex gap-2"><button onClick={completeCurrent} disabled={completing} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{completing ? "完成中" : "完成餐单"}</button><button onClick={() => setCancelConfirmOpen(true)} disabled={cancelling} className="flex-1 rounded-xl bg-yellow-50 p-3 text-yellow-700 disabled:opacity-40">{cancelling ? "取消中" : "取消餐单"}</button><button onClick={() => setDeleteConfirmOpen(true)} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button></div></div>
+          <div className="fixed bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 border-t bg-white p-4">
+            {isEditingPlan ? (
+              <div className="flex gap-2">
+                <button onClick={completeCurrent} disabled={completing} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{completing ? "完成中" : "完成餐单"}</button>
+                <button onClick={() => setCancelConfirmOpen(true)} disabled={cancelling} className="flex-1 rounded-xl bg-yellow-50 p-3 text-yellow-700 disabled:opacity-40">{cancelling ? "取消中" : "取消餐单"}</button>
+                <button onClick={() => setDeleteConfirmOpen(true)} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => resumePlan(currentMealPlan.id)} disabled={resumingId === currentMealPlan.id} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{resumingId === currentMealPlan.id ? "恢复中" : "恢复进行中"}</button>
+                <button onClick={() => copyPlan(currentMealPlan.id)} disabled={copyingId === currentMealPlan.id} className="flex-1 rounded-xl bg-gray-100 p-3 text-gray-700 disabled:opacity-40">{copyingId === currentMealPlan.id ? "复制中" : "复制为新餐单"}</button>
+                <button onClick={() => setDeleteConfirmOpen(true)} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div>
           <div className="mb-3 font-bold">最近餐单</div>
           {mealPlans.length === 0 ? <div className="text-sm text-gray-500">还没有餐单。</div> : null}
-          <div className="space-y-2">{mealPlans.map((plan) => <div key={plan.id} className="rounded-2xl bg-white p-3 shadow"><div className="font-semibold">{plan.name}</div><div className="mb-2 text-xs text-gray-500">{plan.item_count} 道菜 · {plan.status === "editing" ? "编辑中" : plan.status === "completed" ? "已完成" : "已取消"}</div><div className="flex gap-2"><button onClick={async () => { const detail = await getMealPlan(plan.id); setCurrentMealPlan(detail); setView("detail"); }} className="flex-1 rounded-xl bg-gray-100 p-2 text-sm">查看</button>{plan.status !== "editing" ? <button onClick={() => resumePlan(plan.id)} disabled={resumingId === plan.id} className="flex-1 rounded-xl bg-black p-2 text-sm text-white disabled:opacity-40">{resumingId === plan.id ? "恢复中" : "恢复编辑中"}</button> : null}{plan.status !== "editing" ? <button onClick={() => copyPlan(plan.id)} disabled={copyingId === plan.id} className="flex-1 rounded-xl bg-gray-100 p-2 text-sm disabled:opacity-40">{copyingId === plan.id ? "复制中" : "复制为新餐单"}</button> : null}</div></div>)}<div ref={listBottomRef} /></div>
+          <div className="space-y-2">{mealPlans.map((plan) => <div key={plan.id} className="rounded-2xl bg-white p-3 shadow"><div className="font-semibold">{plan.name}</div><div className="mb-2 text-xs text-gray-500">{plan.item_count} 道菜 · {plan.status === "editing" ? "进行中" : plan.status === "completed" ? "已完成" : "已取消"}</div><div className="flex gap-2"><button onClick={async () => { const detail = await getMealPlan(plan.id); setCurrentMealPlan(detail); setView("detail"); }} className="flex-1 rounded-xl bg-gray-100 p-2 text-sm">查看</button></div></div>)}<div ref={listBottomRef} /></div>
         </div>
       )}
 
