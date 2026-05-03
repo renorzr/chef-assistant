@@ -19,6 +19,7 @@ export default function PlanPage() {
   const [resumingId, setResumingId] = useState(null);
   const [copyingId, setCopyingId] = useState(null);
   const [renaming, setRenaming] = useState(false);
+  const [planActionOpen, setPlanActionOpen] = useState(false);
   const [ingredientSummaryOpen, setIngredientSummaryOpen] = useState(false);
   const [ingredientSummaryStatus, setIngredientSummaryStatus] = useState("idle");
   const [ingredientSummary, setIngredientSummary] = useState([]);
@@ -102,7 +103,10 @@ export default function PlanPage() {
           <div className="mb-3 flex items-center justify-between">
             <button onClick={() => setView("list")} className="rounded-xl bg-gray-100 px-3 py-2 text-sm">返回列表</button>
             <div className="text-center"><div className="font-bold">{currentMealPlan.name}</div><div className="text-xs text-gray-500">预计完成：{currentMealPlan.expected_finish_at ? new Date(currentMealPlan.expected_finish_at).toLocaleString() : "未设置"}</div></div>
-            <IconButton onClick={renameCurrent} disabled={renaming} title="修改标题">✎</IconButton>
+            <div className="flex gap-2">
+              <IconButton onClick={renameCurrent} disabled={renaming} title="修改标题">✎</IconButton>
+              <IconButton onClick={() => setPlanActionOpen(true)} title="更多操作">⋮</IconButton>
+            </div>
           </div>
 
           {currentMealPlan.items.length === 0 ? <div className="pb-24 text-sm text-gray-500">当前餐单还没有菜，去菜谱页或菜单页添加。</div> : (
@@ -112,21 +116,6 @@ export default function PlanPage() {
             </div>
           )}
 
-          <div className="fixed bottom-16 left-1/2 z-10 w-full max-w-sm -translate-x-1/2 border-t bg-white p-4">
-            {isEditingPlan ? (
-              <div className="flex gap-2">
-                <button onClick={completeCurrent} disabled={completing} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{completing ? "完成中" : "完成餐单"}</button>
-                <button onClick={() => setCancelConfirmOpen(true)} disabled={cancelling} className="flex-1 rounded-xl bg-yellow-50 p-3 text-yellow-700 disabled:opacity-40">{cancelling ? "取消中" : "取消餐单"}</button>
-                <button onClick={() => setDeleteConfirmOpen(true)} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <button onClick={() => resumePlan(currentMealPlan.id)} disabled={resumingId === currentMealPlan.id} className="flex-1 rounded-xl bg-black p-3 text-white disabled:opacity-40">{resumingId === currentMealPlan.id ? "恢复中" : "恢复进行中"}</button>
-                <button onClick={() => copyPlan(currentMealPlan.id)} disabled={copyingId === currentMealPlan.id} className="flex-1 rounded-xl bg-gray-100 p-3 text-gray-700 disabled:opacity-40">{copyingId === currentMealPlan.id ? "复制中" : "复制为新餐单"}</button>
-                <button onClick={() => setDeleteConfirmOpen(true)} disabled={deleting} className="flex-1 rounded-xl bg-red-50 p-3 text-red-600 disabled:opacity-40">{deleting ? "删除中" : "删除餐单"}</button>
-              </div>
-            )}
-          </div>
         </div>
       ) : (
         <div>
@@ -137,6 +126,21 @@ export default function PlanPage() {
       )}
 
       <RecipeActionSheet open={!!actionItem} title="菜谱操作" onClose={() => setActionItem(null)} options={[{ label: "移出餐单", tone: "danger", loading: removingItemId === actionItem?.id, loadingLabel: "移出中", onClick: () => removeFromMealPlan(actionItem.id) }]} />
+
+      <RecipeActionSheet
+        open={planActionOpen}
+        title="餐单操作"
+        onClose={() => setPlanActionOpen(false)}
+        options={isEditingPlan ? [
+          { label: "完成餐单", icon: "✓", loading: completing, loadingLabel: "完成中", onClick: completeCurrent },
+          { label: "取消餐单", icon: "⊘", loading: cancelling, loadingLabel: "取消中", onClick: () => { setPlanActionOpen(false); setCancelConfirmOpen(true); } },
+          { label: "删除餐单", icon: "⌫", tone: "danger", loading: deleting, loadingLabel: "删除中", onClick: () => { setPlanActionOpen(false); setDeleteConfirmOpen(true); } }
+        ] : currentMealPlan ? [
+          { label: "恢复进行中", icon: "↺", loading: resumingId === currentMealPlan.id, loadingLabel: "恢复中", onClick: () => resumePlan(currentMealPlan.id) },
+          { label: "复制为新餐单", icon: "⧉", loading: copyingId === currentMealPlan.id, loadingLabel: "复制中", onClick: () => copyPlan(currentMealPlan.id) },
+          { label: "删除餐单", icon: "⌫", tone: "danger", loading: deleting, loadingLabel: "删除中", onClick: () => { setPlanActionOpen(false); setDeleteConfirmOpen(true); } }
+        ] : []}
+      />
 
       <ConfirmActionSheet
         open={cancelConfirmOpen}
