@@ -1,4 +1,5 @@
 import asyncio
+from email.utils import formatdate
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -21,6 +22,8 @@ app = FastAPI(title="AI Cooking Assistant MVP", version="1.0.0")
 FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 UPLOADS_DIR = Path(__file__).parent / "uploads"
+ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+INDEX_CACHE_CONTROL = "no-cache, must-revalidate"
 
 _audit_stop_event: asyncio.Event | None = None
 _audit_task: asyncio.Task | None = None
@@ -97,8 +100,32 @@ _register_api_routers()
 _register_api_routers("/api")
 
 
+class CacheControlStaticFiles(StaticFiles):
+    def __init__(self, *args, cache_control: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cache_control = cache_control
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if self.cache_control and response.status_code == 200:
+            response.headers["Cache-Control"] = self.cache_control
+        return response
+
+
+def frontend_index_response():
+    index_path = FRONTEND_DIST_DIR / "index.html"
+    response = FileResponse(index_path)
+    response.headers["Cache-Control"] = INDEX_CACHE_CONTROL
+    try:
+        stat = index_path.stat()
+        response.headers["Last-Modified"] = formatdate(stat.st_mtime, usegmt=True)
+    except OSError:
+        pass
+    return response
+
+
 if FRONTEND_ASSETS_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="frontend-assets")
+    app.mount("/assets", CacheControlStaticFiles(directory=str(FRONTEND_ASSETS_DIR), cache_control=ASSET_CACHE_CONTROL), name="frontend-assets")
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -107,7 +134,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 @app.get("/", include_in_schema=False)
 def serve_frontend_index():
     if FRONTEND_DIST_DIR.exists() and (FRONTEND_DIST_DIR / "index.html").exists():
-        return FileResponse(FRONTEND_DIST_DIR / "index.html")
+        return frontend_index_response()
     return {"status": "frontend_not_built"}
 
 
@@ -119,5 +146,5 @@ def serve_frontend_app(full_path: str):
 
     index_path = FRONTEND_DIST_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return frontend_index_response()
     return {"status": "frontend_not_built"}
