@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import { compressImageFile } from "../utils/imageCompression";
 
 export function listRecipes({ page = 1, pageSize = 20 } = {}) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
@@ -43,8 +44,15 @@ export function importRecipeFromText(text) {
 }
 
 export async function uploadRecipeStepImage(file) {
+  let uploadFile = file;
+  try {
+    uploadFile = await compressImageFile(file);
+  } catch {
+    uploadFile = file;
+  }
+
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", uploadFile);
 
   const response = await fetch("/api/media/upload", {
     method: "POST",
@@ -53,6 +61,9 @@ export async function uploadRecipeStepImage(file) {
 
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
+    if (response.status === 413) {
+      detail = "图片过大，请重新拍摄或选择较小图片。";
+    }
     try {
       const payload = await response.json();
       detail = payload.detail || detail;
