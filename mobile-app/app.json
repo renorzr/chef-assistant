@@ -14,7 +14,10 @@
       "bundleIdentifier": "com.chefassistant.mobile",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "用于拍摄菜谱封面或步骤图片。",
+        "NSPhotoLibraryUsageDescription": "用于从相册选择菜谱封面或步骤图片。",
+        "NSPhotoLibraryAddUsageDescription": "用于保存拍摄的菜谱图片。"
       }
     },
     "android": {
