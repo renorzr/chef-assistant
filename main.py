@@ -23,7 +23,7 @@ FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 UPLOADS_DIR = Path(__file__).parent / "uploads"
 ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
-INDEX_CACHE_CONTROL = "no-cache, must-revalidate"
+INDEX_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
 
 _audit_stop_event: asyncio.Event | None = None
 _audit_task: asyncio.Task | None = None
@@ -116,6 +116,8 @@ def frontend_index_response():
     index_path = FRONTEND_DIST_DIR / "index.html"
     response = FileResponse(index_path)
     response.headers["Cache-Control"] = INDEX_CACHE_CONTROL
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     try:
         stat = index_path.stat()
         response.headers["Last-Modified"] = formatdate(stat.st_mtime, usegmt=True)

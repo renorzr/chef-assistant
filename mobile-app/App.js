@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, Pressable, SafeAreaView, StyleSheet, Text, Vi
 import { StatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 
-const APP_WEB_URL = 'https://chefassistant.renorzr.top';
+const APP_WEB_URL = 'https://chefassistant.renorzr.top/?app_web_v=20260531-e4e7b11';
 const API_BASE_URL = 'https://chefassistant.renorzr.top';
 
 function extractRecipeLinks(html) {
@@ -284,6 +284,7 @@ export default function App() {
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}
+        cacheEnabled={false}
       />
 
       <Modal
